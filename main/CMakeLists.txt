@@ -1,4 +1,4 @@
-idf_component_register(SRCS "hello_world_main.c" "esp_chess_main.cc"
+idf_component_register(SRCS "esp_chess_main.cc"
                             "ChessBoard.cc"
                             "ChessPiece.cc"
                             "BishopPiece.cc"

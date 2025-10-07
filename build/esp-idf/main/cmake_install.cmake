@@ -1,4 +1,4 @@
-# Install script for directory: C:/Users/jacks/chess_project_v0_espidf/main
+# Install script for directory: C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

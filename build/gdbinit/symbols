@@ -18,8 +18,8 @@ end
 
 # Load bootloader symbols
 set confirm off
-    add-symbol-file C:/Users/jacks/chess_project_v0_espidf/build/bootloader/bootloader.elf
+    add-symbol-file C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/build/bootloader/bootloader.elf
 set confirm on
 
 # Load application symbols
-file C:/Users/jacks/chess_project_v0_espidf/build/chess_project_v0_espidf.elf
+file C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/build/chess_project_v0_espidf.elf

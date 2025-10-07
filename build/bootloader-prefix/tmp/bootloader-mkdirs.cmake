@@ -10,18 +10,18 @@ if(NOT EXISTS "C:/Users/jacks/esp/v5.5.1/esp-idf/components/bootloader/subprojec
   file(MAKE_DIRECTORY "C:/Users/jacks/esp/v5.5.1/esp-idf/components/bootloader/subproject")
 endif()
 file(MAKE_DIRECTORY
-  "C:/Users/jacks/chess_project_v0_espidf/build/bootloader"
-  "C:/Users/jacks/chess_project_v0_espidf/build/bootloader-prefix"
-  "C:/Users/jacks/chess_project_v0_espidf/build/bootloader-prefix/tmp"
-  "C:/Users/jacks/chess_project_v0_espidf/build/bootloader-prefix/src/bootloader-stamp"
-  "C:/Users/jacks/chess_project_v0_espidf/build/bootloader-prefix/src"
-  "C:/Users/jacks/chess_project_v0_espidf/build/bootloader-prefix/src/bootloader-stamp"
+  "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/build/bootloader"
+  "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/build/bootloader-prefix"
+  "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/build/bootloader-prefix/tmp"
+  "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/build/bootloader-prefix/src/bootloader-stamp"
+  "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/build/bootloader-prefix/src"
+  "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/build/bootloader-prefix/src/bootloader-stamp"
 )
 
 set(configSubDirs )
 foreach(subDir IN LISTS configSubDirs)
-    file(MAKE_DIRECTORY "C:/Users/jacks/chess_project_v0_espidf/build/bootloader-prefix/src/bootloader-stamp/${subDir}")
+    file(MAKE_DIRECTORY "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/build/bootloader-prefix/src/bootloader-stamp/${subDir}")
 endforeach()
 if(cfgdir)
-  file(MAKE_DIRECTORY "C:/Users/jacks/chess_project_v0_espidf/build/bootloader-prefix/src/bootloader-stamp${cfgdir}") # cfgdir has leading slash
+  file(MAKE_DIRECTORY "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/build/bootloader-prefix/src/bootloader-stamp${cfgdir}") # cfgdir has leading slash
 endif()

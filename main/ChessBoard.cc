@@ -7,6 +7,7 @@
 #include "KnightPiece.hh"
 #include "QueenPiece.hh"
 #include <cmath>
+#include <utility>
 
 namespace Student
 {
@@ -130,6 +131,13 @@ namespace Student
             return false;
         }
 
+        // CRITICAL: Verify the piece is actually at the position we think it is
+        if (piece->getRow() != fromRow || piece->getColumn() != fromColumn) {
+            printf("ERROR: Piece position mismatch! Piece thinks it's at (%d,%d) but we got it from (%d,%d)\n",
+                   piece->getRow(), piece->getColumn(), fromRow, fromColumn);
+            return false;
+        }
+
         if (piece->getType() == King)
         {
             int cDiff = toColumn - fromColumn;
@@ -198,6 +206,11 @@ namespace Student
             }
         }
 
+        // Save the piece's ACTUAL position before we move it
+        int originalPieceRow = piece->getRow();
+        int originalPieceCol = piece->getColumn();
+
+
         ChessPiece *capturedPiece = getPiece(toRow, toColumn);
         bool doEnP = false;
         ChessPiece *enPCap = nullptr;
@@ -208,7 +221,7 @@ namespace Student
                 doEnP = true;
                 int rp = (piece->getColor()==White) ? enPRow+1 : enPRow-1;
                 enPCap = getPiece(rp, enPCol);
-                board[fromRow][fromColumn] = nullptr;
+                board[originalPieceRow][originalPieceCol] = nullptr;
                 board[toRow][toColumn] = piece;
                 board[rp][enPCol] = nullptr;
                 piece->setPosition(toRow, toColumn);
@@ -216,7 +229,7 @@ namespace Student
         }
         if (!doEnP)
         {
-            board[fromRow][fromColumn] = nullptr;
+            board[originalPieceRow][originalPieceCol] = nullptr;
             board[toRow][toColumn] = piece;
             piece->setPosition(toRow, toColumn);
         }
@@ -226,17 +239,17 @@ namespace Student
 
         if (!doEnP)
         {
-            board[fromRow][fromColumn] = piece;
+            board[originalPieceRow][originalPieceCol] = piece;
             board[toRow][toColumn] = capturedPiece;
-            piece->setPosition(fromRow, fromColumn);
+            piece->setPosition(originalPieceRow, originalPieceCol);
         }
         else
         {
             int rp = (piece->getColor()==White) ? enPRow+1 : enPRow-1;
-            board[fromRow][fromColumn] = piece;
+            board[originalPieceRow][originalPieceCol] = piece;
             board[toRow][toColumn] = capturedPiece;
             board[rp][enPCol] = enPCap;
-            piece->setPosition(fromRow, fromColumn);
+            piece->setPosition(originalPieceRow, originalPieceCol);
         }
 
         if (kingNSafe)
@@ -244,6 +257,91 @@ namespace Student
             return false;
         }
         return true;
+    }
+
+    // Simple version that doesn't modify the board
+    bool ChessBoard::isValidMoveSimple(int fromRow, int fromColumn, int toRow, int toColumn)
+    {
+        if (fromRow < 0 || fromRow >= numRows || fromColumn < 0 || fromColumn >= numCols ||
+            toRow < 0 || toRow >= numRows || toColumn < 0 || toColumn >= numCols)
+        {
+            return false;
+        }
+
+        ChessPiece *piece = getPiece(fromRow, fromColumn);
+        if (piece == nullptr) {
+            return false;
+        }
+
+        if (fromRow == toRow && fromColumn == toColumn) {
+            return false;
+        }
+
+        // Check if it's the right turn
+        if (piece->getColor() != turn) {
+            return false;
+        }
+
+        // Basic movement check - can the piece move there?
+        if (!piece->canMoveToLocation(toRow, toColumn)) {
+            // Check for special pawn en passant move
+            if (piece->getType() == Pawn && enP) {
+                if (toRow == enPRow && toColumn == enPCol &&
+                    piece->getRow() == ((piece->getColor()==White)?(enPRow+1):(enPRow-1)) &&
+                    std::abs(piece->getColumn()-enPCol)==1) {
+                    // En passant is allowed
+                } else {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        // For now, we'll skip the king safety check to avoid board modification
+        // This means some moves that would put the king in check will be shown as possible
+        // but they'll be rejected when actually attempted
+        return true;
+    }
+
+    std::vector<std::pair<int, int>> ChessBoard::getPossibleMoves(int fromRow, int fromColumn)
+    {
+        std::vector<std::pair<int, int>> possibleMoves;
+
+        // Check if there's a piece at the given position
+        ChessPiece *piece = getPiece(fromRow, fromColumn);
+        if (piece == nullptr) {
+            return possibleMoves;  // Return empty vector if no piece
+        }
+
+        // NOTE: We don't check turn here because the main game loop already
+        // verifies the piece belongs to the current player
+
+        // Store the current turn to restore it later
+        Color savedTurn = turn;
+
+        // Temporarily set turn to the piece's color for isValidMove checks
+        turn = piece->getColor();
+
+        // Check all possible board positions
+        for (int toRow = 0; toRow < numRows; toRow++) {
+            for (int toColumn = 0; toColumn < numCols; toColumn++) {
+                // Skip the current position
+                if (toRow == fromRow && toColumn == fromColumn) {
+                    continue;
+                }
+
+                // Check if this is a valid move - now safe since we fixed isValidMove
+                if (isValidMove(fromRow, fromColumn, toRow, toColumn)) {
+                    possibleMoves.push_back(std::pair<int, int>(toRow, toColumn));
+                }
+            }
+        }
+
+        // Restore the original turn
+        turn = savedTurn;
+
+        return possibleMoves;
     }
 
     bool ChessBoard::movePiece(int fromRow, int fromColumn, int toRow, int toColumn)
@@ -430,6 +528,7 @@ namespace Student
 
     std::ostringstream ChessBoard::displayBoard()
     {
+
         std::ostringstream outputString;
         outputString << "  ";
         int i=0;
@@ -567,7 +666,6 @@ namespace Student
                                 if (mv) {
                                     ChessPiece *victim=getPiece(r2,c2);
                                     ChessPiece *capSave=victim;
-                                    ChessPiece *orgP=pp;
                                     int orgRow=pp->getRow();
                                     int orgCol=pp->getColumn();
                                     bool saveEnP=enP;

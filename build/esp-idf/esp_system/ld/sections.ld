@@ -1,6 +1,6 @@
 /* Automatically generated file; DO NOT EDIT */
 /* Espressif IoT Development Framework Linker Script */
-/* Generated from: C:\Users\jacks\chess_project_v0_espidf\build\esp-idf\esp_system\ld\sections.ld.in */
+/* Generated from: C:\Users\jacks\Documents\GitHub\Wizard_Chess_MCU_0\build\esp-idf\esp_system\ld\sections.ld.in */
 
 /*
 

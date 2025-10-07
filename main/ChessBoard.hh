@@ -36,6 +36,10 @@ namespace Student
         void createChessPiece(Color col, Type ty, int startRow, int startColumn);
         bool movePiece(int fromRow, int fromColumn, int toRow, int toColumn);
         bool isValidMove(int fromRow, int fromColumn, int toRow, int toColumn);
+        bool isValidMoveSimple(int fromRow, int fromColumn, int toRow, int toColumn);
+        std::vector<std::pair<int, int>> getPossibleMoves(int fromRow, int fromColumn);
+        void setTurn(Color color) { turn = color; }
+        Color getTurn() const { return turn; }
         bool isPieceUnderThreat(int row, int column);
         std::ostringstream displayBoard();
         float scoreBoard();

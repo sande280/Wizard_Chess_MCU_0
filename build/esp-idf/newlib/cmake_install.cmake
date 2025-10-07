@@ -39,6 +39,6 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("C:/Users/jacks/chess_project_v0_espidf/build/esp-idf/newlib/src/port/cmake_install.cmake")
+  include("C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/build/esp-idf/newlib/src/port/cmake_install.cmake")
 endif()
 

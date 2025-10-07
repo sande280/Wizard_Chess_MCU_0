@@ -1,4 +1,4 @@
-/* * Data converted from C:/Users/jacks/chess_project_v0_espidf/build/esp-idf/mbedtls/x509_crt_bundle
+/* * Data converted from C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/build/esp-idf/mbedtls/x509_crt_bundle
  */
 .data
 #if !defined (__APPLE__) && !defined (__linux__)
