@@ -3,3 +3,53 @@
 .vscode
 .devcontainer
 .clangd
+
+# ESP-IDF build artifacts
+build/
+sdkconfig
+sdkconfig.old
+sdkconfig.ci
+
+# Test/debug files
+test_expanded_board.cc
+debug_board.cc
+calculate_board_size.cc
+
+# Compiled test/debug executables
+debug_board
+test_expanded_board
+calculate_board_size
+*.exe
+*.out
+
+# Backup directories
+checkpoint_backup_working_capture_zones/
+*_backup/
+*_checkpoint/
+CHECKPOINT_INFO.txt
+
+# Object files from standalone compilation
+*.o
+*.obj
+*.elf
+
+# Core dumps
+core
+
+# Log files
+*.log
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# IDE specific files
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ESP-IDF specific
+.espressif/
+dependencies.lock

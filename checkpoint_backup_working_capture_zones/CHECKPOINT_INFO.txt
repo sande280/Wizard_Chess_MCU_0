@@ -1,0 +1,39 @@
+CHECKPOINT: Working Capture Zones Implementation
+================================================
+Date Created: Current Session
+Status: WORKING - All features functional
+
+Features Working at this Checkpoint:
+-------------------------------------
+1. ✅ 12x8 Expanded board display
+2. ✅ Capture zones (left for black pieces, right for white pieces)
+3. ✅ Captured pieces tracked and displayed in zones
+4. ✅ Coordinate translation (columns 2-9 for playable area)
+5. ✅ Piece selection with possible moves display
+6. ✅ Help text and instructions updated
+7. ✅ UART buffer increased to 1024 for full board display
+
+Files Backed Up:
+----------------
+- ChessBoard.cc.backup - Contains displayExpandedBoard() and capture tracking
+- ChessBoard.hh.backup - Contains capture piece vectors declarations
+- esp_chess_main.cc.backup - Contains coordinate translation and UI
+
+Known Working State:
+--------------------
+- Board displays all pieces correctly
+- Captures work and show in side zones
+- Move selection and execution work properly
+- No debug output present
+- Ready for test mode implementation
+
+How to Restore:
+---------------
+If something breaks, copy these files back:
+cp checkpoint_backup_working_capture_zones/ChessBoard.cc.backup main/ChessBoard.cc
+cp checkpoint_backup_working_capture_zones/ChessBoard.hh.backup main/ChessBoard.hh
+cp checkpoint_backup_working_capture_zones/esp_chess_main.cc.backup main/esp_chess_main.cc
+
+Next Feature to Add:
+--------------------
+"test" mode for sensor-based move detection
