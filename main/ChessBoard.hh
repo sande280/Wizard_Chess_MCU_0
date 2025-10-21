@@ -37,6 +37,7 @@ namespace Student
         ChessPiece *getPiece(int r, int c);
         void createChessPiece(Color col, Type ty, int startRow, int startColumn);
         bool movePiece(int fromRow, int fromColumn, int toRow, int toColumn);
+        void restorePiece(int row, int col, ChessPiece* piece);
         bool isValidMove(int fromRow, int fromColumn, int toRow, int toColumn);
         bool isValidMoveSimple(int fromRow, int fromColumn, int toRow, int toColumn);
         std::vector<std::pair<int, int>> getPossibleMoves(int fromRow, int fromColumn);

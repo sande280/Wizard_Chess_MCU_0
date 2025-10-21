@@ -60,6 +60,15 @@ namespace Student
         return board.at(r).at(c);
     }
 
+    void ChessBoard::restorePiece(int row, int col, ChessPiece* piece) {
+        if (row >= 0 && row < numRows && col >= 0 && col < numCols) {
+            board[row][col] = piece;
+            if (piece != nullptr) {
+                piece->setPosition(row, col);
+            }
+        }
+    }
+
     void ChessBoard::createChessPiece(Color col, Type ty, int startRow, int startColumn)
     {
         if (board.at(startRow).at(startColumn) != nullptr)

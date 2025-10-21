@@ -34,6 +34,7 @@ string colorToString(Color color);
 int translateColumn(int displayCol);
 void uart_printf(const char* format, ...);
 void detectAndExecuteMove(ChessBoard& board, int row1, int col1, int row2, int col2, Color& currentPlayer);
+void makeAIMove(ChessBoard& board, Color& currentPlayer);
 
 void setupStandardBoard(ChessBoard& board) {
     for (int col = 0; col < 8; col++) {
@@ -123,6 +124,37 @@ int translateColumn(int displayCol) {
         return -1;
     }
     return displayCol - 2;
+}
+
+// Simple AI structure and function
+namespace Student {
+    struct SimpleMove {
+        int fromRow, fromCol, toRow, toCol;
+        int value;
+    };
+    SimpleMove findBestSimpleMove(ChessBoard& board, Color aiColor);
+}
+
+void makeAIMove(ChessBoard& board, Color& currentPlayer) {
+    uart_printf("\r\nAI is thinking...\r\n");
+
+    SimpleMove bestMove = findBestSimpleMove(board, currentPlayer);
+
+    if (bestMove.fromRow == -1) {
+        uart_printf("AI has no valid moves!\r\n");
+        return;
+    }
+
+    uart_printf("AI moves from (%d,%d) to (%d,%d)\r\n",
+               bestMove.fromRow, bestMove.fromCol + 2,
+               bestMove.toRow, bestMove.toCol + 2);
+
+    board.setTurn(currentPlayer);
+    if (board.movePiece(bestMove.fromRow, bestMove.fromCol, bestMove.toRow, bestMove.toCol)) {
+        currentPlayer = (currentPlayer == White) ? Black : White;
+    } else {
+        uart_printf("AI move failed!\r\n");
+    }
 }
 
 
@@ -342,7 +374,7 @@ void chess_game_task(void *pvParameter) {
     uart_printf("  1. row col - Select a piece and see possible moves\r\n");
     uart_printf("  2. row1 col1 row2 col2 - Direct move\r\n");
     uart_printf("Example: 6 6 (selects pawn at row 6, column 6)\r\n");
-    uart_printf("Commands: quit, help, board, new\r\n\r\n");
+    uart_printf("Commands: quit, help, board, new, ai\r\n\r\n");
 
     string boardStr = board.displayExpandedBoard().str();
     uart_printf("%s\r\n", boardStr.c_str());
@@ -412,6 +444,7 @@ void chess_game_task(void *pvParameter) {
             uart_printf("  'help'  - Show this help\r\n");
             uart_printf("  'board' - Redraw the board\r\n");
             uart_printf("  'new'   - Start a new game\r\n");
+            uart_printf("  'ai'    - Let AI make a move (Simple AI)\r\n");
             uart_printf("  'test'  - Sensor simulation mode (detect move from 2 positions)\r\n");
 
             continue;
@@ -426,6 +459,11 @@ void chess_game_task(void *pvParameter) {
             uart_printf("\r\n NEW GAME\r\n");
             boardStr = board.displayExpandedBoard().str();
             uart_printf("%s\r\n", boardStr.c_str());
+            continue;
+        } else if (strcmp(input, "ai") == 0) {
+            makeAIMove(board, currentPlayer);
+            boardStr = board.displayExpandedBoard().str();
+            uart_printf("\r\n%s\r\n", boardStr.c_str());
             continue;
         } else if (strcmp(input, "test") == 0) {
             bool testModeComplete = false;

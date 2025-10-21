@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "chess_project_v0_espidf",
-    "project_version":    "67e56b6-dirty",
+    "project_version":    "021e5be-dirty",
     "project_path":       "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0",
     "idf_path":           "C:/Users/jacks/esp/v5.5.1/esp-idf",
     "build_dir":          "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/build",
@@ -700,7 +700,7 @@
             "managed_reqs": [],
             "managed_priv_reqs": [],
             "file": "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/build/esp-idf/main/libmain.a",
-            "sources": [ "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/esp_chess_main.cc", "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/ChessBoard.cc", "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/ChessPiece.cc", "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/BishopPiece.cc", "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/KingPiece.cc", "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/KnightPiece.cc", "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/PawnPiece.cc", "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/QueenPiece.cc", "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/RookPiece.cc" ],
+            "sources": [ "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/SimpleAI.cc", "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/ChessAI.cc", "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/esp_chess_main.cc", "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/ChessBoard.cc", "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/ChessPiece.cc", "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/BishopPiece.cc", "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/KingPiece.cc", "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/KnightPiece.cc", "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/PawnPiece.cc", "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/QueenPiece.cc", "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/main/RookPiece.cc" ],
             "include_dirs": [ "." ]
         },
         "mbedtls": {
