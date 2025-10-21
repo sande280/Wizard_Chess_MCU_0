@@ -32,6 +32,17 @@ namespace Student
             }
             row++;
         }
+
+        // Clean up captured pieces
+        for (ChessPiece* piece : capturedWhitePieces) {
+            delete piece;
+        }
+        capturedWhitePieces.clear();
+
+        for (ChessPiece* piece : capturedBlackPieces) {
+            delete piece;
+        }
+        capturedBlackPieces.clear();
     }
 
     int ChessBoard::getNumRows()
@@ -378,7 +389,12 @@ namespace Student
             {
                 victim = getPiece(toRow, toColumn);
                 if(victim != nullptr) {
-                    delete(victim);
+                    // Track captured piece instead of deleting
+                    if (victim->getColor() == White) {
+                        capturedWhitePieces.push_back(victim);
+                    } else {
+                        capturedBlackPieces.push_back(victim);
+                    }
                 }
                 pieceM->setPosition(toRow, toColumn);
                 board[fromRow][fromColumn] = nullptr;
@@ -388,7 +404,14 @@ namespace Student
             {
                 int rp=(pieceM->getColor()==White?(enPRow+1):(enPRow-1));
                 enPCap = getPiece(rp,enPCol);
-                if (enPCap!=nullptr) delete(enPCap);
+                if (enPCap!=nullptr) {
+                    // Track captured piece instead of deleting
+                    if (enPCap->getColor() == White) {
+                        capturedWhitePieces.push_back(enPCap);
+                    } else {
+                        capturedBlackPieces.push_back(enPCap);
+                    }
+                }
                 board[rp][enPCol]=nullptr;
                 pieceM->setPosition(toRow, toColumn);
                 board[fromRow][fromColumn]=nullptr;
@@ -397,7 +420,14 @@ namespace Student
             else if (cstl)
             {
                 victim = getPiece(toRow,toColumn);
-                if(victim!=nullptr) {delete victim;}
+                if(victim!=nullptr) {
+                    // Track captured piece instead of deleting (shouldn't happen in valid castling)
+                    if (victim->getColor() == White) {
+                        capturedWhitePieces.push_back(victim);
+                    } else {
+                        capturedBlackPieces.push_back(victim);
+                    }
+                }
                 pieceM->setPosition(toRow,toColumn);
                 board[fromRow][fromColumn]=nullptr;
                 board[toRow][toColumn]=pieceM;
@@ -408,7 +438,14 @@ namespace Student
                 int step=(rSide?1:-1);
                 int nRCol=fromColumn+step;
                 ChessPiece* vv=getPiece(fromRow,nRCol);
-                if(vv!=nullptr) {delete vv;}
+                if(vv!=nullptr) {
+                    // Track captured piece instead of deleting (shouldn't happen in valid castling)
+                    if (vv->getColor() == White) {
+                        capturedWhitePieces.push_back(vv);
+                    } else {
+                        capturedBlackPieces.push_back(vv);
+                    }
+                }
                 rr->setPosition(fromRow,nRCol);
                 board[fromRow][nRCol]=rr;
                 board[fromRow][rCol]=nullptr;
@@ -566,6 +603,80 @@ namespace Student
         }
         outputString << std::endl
                      << std::endl;
+
+        return outputString;
+    }
+
+    std::ostringstream ChessBoard::displayExpandedBoard()
+    {
+        std::ostringstream outputString;
+
+        // Display column headers (0-9, A-B for 12 columns)
+        outputString << "    ";
+        for (int i = 0; i < 12; i++) {
+            if (i < 10) {
+                outputString << i << " ";
+            } else {
+                outputString << (char)('A' + i - 10) << " ";
+            }
+        }
+        outputString << std::endl;
+
+        // Display separator line
+        outputString << "    ";
+        for (int i = 0; i < 12; i++) {
+            outputString << "--";
+        }
+        outputString << std::endl;
+
+        // Display each row
+        for (int row = 0; row < numRows; row++) {
+            outputString << "  " << row << "|";
+
+            // Left capture zone (columns 0-1) - show captured BLACK pieces
+            for (int captureCol = 0; captureCol < 2; captureCol++) {
+                // Calculate which captured piece to show here
+                size_t capturedIndex = row * 2 + captureCol;
+                if (capturedIndex < capturedBlackPieces.size()) {
+                    outputString << capturedBlackPieces[capturedIndex]->toString() << " ";
+                } else {
+                    outputString << "  ";
+                }
+            }
+
+            // Main board (columns 2-9, mapped from internal 0-7)
+            for (int col = 0; col < numCols; col++) {
+                ChessPiece *piece = getPiece(row, col);
+                if (piece != nullptr) {
+                    outputString << piece->toString();
+                } else {
+                    outputString << " ";
+                }
+                outputString << " ";
+            }
+
+            // Right capture zone (columns 10-11) - show captured WHITE pieces
+            for (int captureCol = 0; captureCol < 2; captureCol++) {
+                // Calculate which captured piece to show here
+                size_t capturedIndex = row * 2 + captureCol;
+                if (capturedIndex < capturedWhitePieces.size()) {
+                    outputString << capturedWhitePieces[capturedIndex]->toString() << " ";
+                } else {
+                    outputString << "  ";
+                }
+            }
+
+            outputString << "|" << std::endl;
+        }
+
+        // Bottom separator
+        outputString << "    ";
+        for (int i = 0; i < 12; i++) {
+            outputString << "--";
+        }
+        outputString << std::endl;
+
+        outputString << std::endl;
 
         return outputString;
     }

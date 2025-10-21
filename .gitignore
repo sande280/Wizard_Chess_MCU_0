@@ -3,3 +3,7 @@
 .vscode
 .devcontainer
 .clangd
+
+test_expanded_board.cc
+debug_board.cc
+calculate_board_size.cc

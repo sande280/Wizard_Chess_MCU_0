@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "chess_project_v0_espidf",
-    "project_version":    "e8bf16d-dirty",
+    "project_version":    "67e56b6-dirty",
     "project_path":       "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0",
     "idf_path":           "C:/Users/jacks/esp/v5.5.1/esp-idf",
     "build_dir":          "C:/Users/jacks/Documents/GitHub/Wizard_Chess_MCU_0/build",

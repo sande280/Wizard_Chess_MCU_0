@@ -31,7 +31,9 @@ void setupStandardBoard(ChessBoard& board);
 bool isKingInCheck(ChessBoard& board, Color color);
 bool hasValidMoves(ChessBoard& board, Color color);
 string colorToString(Color color);
-void makeAIMove(ChessBoard& board);
+int translateColumn(int displayCol);
+void uart_printf(const char* format, ...);
+void detectAndExecuteMove(ChessBoard& board, int row1, int col1, int row2, int col2, Color& currentPlayer);
 
 void setupStandardBoard(ChessBoard& board) {
     for (int col = 0; col < 8; col++) {
@@ -92,7 +94,6 @@ bool isKingInCheck(ChessBoard& board, Color color) {
 }
 
 bool hasValidMoves(ChessBoard& board, Color color) {
-    // Save current turn and set it to the color we're checking
     Color savedTurn = board.getTurn();
     board.setTurn(color);
 
@@ -100,10 +101,8 @@ bool hasValidMoves(ChessBoard& board, Color color) {
         for (int fromCol = 0; fromCol < 8; fromCol++) {
             ChessPiece* piece = board.getPiece(fromRow, fromCol);
             if (piece && piece->getColor() == color) {
-                // Use getPossibleMoves which safely checks moves without corrupting the board
                 std::vector<std::pair<int, int>> possibleMoves = board.getPossibleMoves(fromRow, fromCol);
                 if (!possibleMoves.empty()) {
-                    // Restore turn and return true - we found at least one valid move
                     board.setTurn(savedTurn);
                     return true;
                 }
@@ -111,7 +110,6 @@ bool hasValidMoves(ChessBoard& board, Color color) {
         }
     }
 
-    // Restore turn
     board.setTurn(savedTurn);
     return false;
 }
@@ -120,25 +118,179 @@ string colorToString(Color color) {
     return (color == White) ? "White" : "Black";
 }
 
-void makeAIMove(ChessBoard& board) {
-    board.setTurn(Black);  // Set turn to Black for AI moves
-    for (int fromRow = 0; fromRow < 8; fromRow++) {
-        for (int fromCol = 0; fromCol < 8; fromCol++) {
-            ChessPiece* piece = board.getPiece(fromRow, fromCol);
-            if (piece && piece->getColor() == Black) {
-                for (int toRow = 0; toRow < 8; toRow++) {
-                    for (int toCol = 0; toCol < 8; toCol++) {
-                        if (board.movePiece(fromRow, fromCol, toRow, toCol)) {
-                            printf("AI moves from (%d,%d) to (%d,%d)\n",
-                                   fromRow, fromCol, toRow, toCol);
-                            return;
-                        }
+int translateColumn(int displayCol) {
+    if (displayCol < 2 || displayCol > 9) {
+        return -1;
+    }
+    return displayCol - 2;
+}
+
+
+void detectAndExecuteMove(ChessBoard& board, int row1, int col1, int row2, int col2, Color& currentPlayer) {
+    ChessPiece* piece1 = board.getPiece(row1, col1);
+    ChessPiece* piece2 = board.getPiece(row2, col2);
+
+    uart_printf("[TEST MODE] Analyzing positions (%d,%d) and (%d,%d)\r\n",
+                row1, col1 + 2, row2, col2 + 2);
+
+    if (!piece1 && !piece2) {
+        uart_printf("Error: Both positions are empty. No move possible.\r\n");
+        return;
+    }
+
+    if (piece1 && !piece2) {
+        if (piece1->getColor() != currentPlayer) {
+            uart_printf("Error: Piece at (%d,%d) belongs to %s, but it's %s's turn.\r\n",
+                       row1, col1 + 2, colorToString(piece1->getColor()).c_str(),
+                       colorToString(currentPlayer).c_str());
+            return;
+        }
+
+        uart_printf("Detected: %s %s moves from (%d,%d) to (%d,%d)\r\n",
+                   colorToString(piece1->getColor()).c_str(),
+                   piece1->getType() == Pawn ? "pawn" :
+                   piece1->getType() == Rook ? "rook" :
+                   piece1->getType() == Knight ? "knight" :
+                   piece1->getType() == Bishop ? "bishop" :
+                   piece1->getType() == Queen ? "queen" : "king",
+                   row1, col1 + 2, row2, col2 + 2);
+
+        board.setTurn(currentPlayer);
+        if (board.movePiece(row1, col1, row2, col2)) {
+            currentPlayer = (currentPlayer == White) ? Black : White;
+            uart_printf("Move successful!\r\n");
+        } else {
+            uart_printf("Error: Invalid move.\r\n");
+        }
+        return;
+    }
+
+    if (!piece1 && piece2) {
+        if (piece2->getColor() != currentPlayer) {
+            uart_printf("Error: Piece at (%d,%d) belongs to %s, but it's %s's turn.\r\n",
+                       row2, col2 + 2, colorToString(piece2->getColor()).c_str(),
+                       colorToString(currentPlayer).c_str());
+            return;
+        }
+
+        uart_printf("Detected: %s %s moves from (%d,%d) to (%d,%d)\r\n",
+                   colorToString(piece2->getColor()).c_str(),
+                   piece2->getType() == Pawn ? "pawn" :
+                   piece2->getType() == Rook ? "rook" :
+                   piece2->getType() == Knight ? "knight" :
+                   piece2->getType() == Bishop ? "bishop" :
+                   piece2->getType() == Queen ? "queen" : "king",
+                   row2, col2 + 2, row1, col1 + 2);
+
+        board.setTurn(currentPlayer);
+        if (board.movePiece(row2, col2, row1, col1)) {
+            currentPlayer = (currentPlayer == White) ? Black : White;
+            uart_printf("Move successful!\r\n");
+        } else {
+            uart_printf("Error: Invalid move.\r\n");
+        }
+        return;
+    }
+
+    if (piece1 && piece2) {
+        Color color1 = piece1->getColor();
+        Color color2 = piece2->getColor();
+
+        if (color1 == color2) {
+            if (color1 != currentPlayer) {
+                uart_printf("Error: Both pieces belong to %s, but it's %s's turn.\r\n",
+                           colorToString(color1).c_str(),
+                           colorToString(currentPlayer).c_str());
+                return;
+            }
+
+            if ((piece1->getType() == King && piece2->getType() == Rook) ||
+                (piece1->getType() == Rook && piece2->getType() == King)) {
+                uart_printf("Detected: Possible castling move\r\n");
+                if (piece1->getType() == King) {
+                    int kingCol = col1;
+                    int rookCol = col2;
+                    int newKingCol = (rookCol > kingCol) ? kingCol + 2 : kingCol - 2;
+
+                    board.setTurn(currentPlayer);
+                    if (board.movePiece(row1, kingCol, row1, newKingCol)) {
+                        currentPlayer = (currentPlayer == White) ? Black : White;
+                        uart_printf("Castling successful!\r\n");
+                    } else {
+                        uart_printf("Error: Castling not allowed.\r\n");
+                    }
+                } else {
+                    int kingCol = col2;
+                    int rookCol = col1;
+                    int newKingCol = (rookCol > kingCol) ? kingCol + 2 : kingCol - 2;
+
+                    board.setTurn(currentPlayer);
+                    if (board.movePiece(row2, kingCol, row2, newKingCol)) {
+                        currentPlayer = (currentPlayer == White) ? Black : White;
+                        uart_printf("Castling successful!\r\n");
+                    } else {
+                        uart_printf("Error: Castling not allowed.\r\n");
                     }
                 }
+            } else {
+                uart_printf("Error: Both pieces are the same color but not King and Rook.\r\n");
             }
+            return;
+        }
+
+        if (color1 == currentPlayer) {
+            uart_printf("Detected: %s %s at (%d,%d) captures %s %s at (%d,%d)\r\n",
+                       colorToString(color1).c_str(),
+                       piece1->getType() == Pawn ? "pawn" :
+                       piece1->getType() == Rook ? "rook" :
+                       piece1->getType() == Knight ? "knight" :
+                       piece1->getType() == Bishop ? "bishop" :
+                       piece1->getType() == Queen ? "queen" : "king",
+                       row1, col1 + 2,
+                       colorToString(color2).c_str(),
+                       piece2->getType() == Pawn ? "pawn" :
+                       piece2->getType() == Rook ? "rook" :
+                       piece2->getType() == Knight ? "knight" :
+                       piece2->getType() == Bishop ? "bishop" :
+                       piece2->getType() == Queen ? "queen" : "king",
+                       row2, col2 + 2);
+
+            board.setTurn(currentPlayer);
+            if (board.movePiece(row1, col1, row2, col2)) {
+                currentPlayer = (currentPlayer == White) ? Black : White;
+                uart_printf("Capture successful!\r\n");
+            } else {
+                uart_printf("Error: Invalid capture.\r\n");
+            }
+        } else if (color2 == currentPlayer) {
+            uart_printf("Detected: %s %s at (%d,%d) captures %s %s at (%d,%d)\r\n",
+                       colorToString(color2).c_str(),
+                       piece2->getType() == Pawn ? "pawn" :
+                       piece2->getType() == Rook ? "rook" :
+                       piece2->getType() == Knight ? "knight" :
+                       piece2->getType() == Bishop ? "bishop" :
+                       piece2->getType() == Queen ? "queen" : "king",
+                       row2, col2 + 2,
+                       colorToString(color1).c_str(),
+                       piece1->getType() == Pawn ? "pawn" :
+                       piece1->getType() == Rook ? "rook" :
+                       piece1->getType() == Knight ? "knight" :
+                       piece1->getType() == Bishop ? "bishop" :
+                       piece1->getType() == Queen ? "queen" : "king",
+                       row1, col1 + 2);
+
+            board.setTurn(currentPlayer);
+            if (board.movePiece(row2, col2, row1, col1)) {
+                currentPlayer = (currentPlayer == White) ? Black : White;
+                uart_printf("Capture successful!\r\n");
+            } else {
+                uart_printf("Error: Invalid capture.\r\n");
+            }
+        } else {
+            uart_printf("Error: Neither piece belongs to the current player (%s).\r\n",
+                       colorToString(currentPlayer).c_str());
         }
     }
-    printf("AI has no valid moves!\n");
 }
 
 void uart_read_line(char* buffer, int max_len) {
@@ -166,7 +318,7 @@ void uart_read_line(char* buffer, int max_len) {
 }
 
 void uart_printf(const char* format, ...) {
-    char buffer[256];
+    char buffer[1024];
     va_list args;
     va_start(args, format);
     vsnprintf(buffer, sizeof(buffer), format, args);
@@ -175,6 +327,8 @@ void uart_printf(const char* format, ...) {
 }
 
 void chess_game_task(void *pvParameter) {
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+
     ChessBoard board(8, 8);
     setupStandardBoard(board);
 
@@ -182,16 +336,15 @@ void chess_game_task(void *pvParameter) {
     bool gameRunning = true;
     char input[256];
 
-
-
-    uart_printf("Enter moves in two ways:\r\n");
+    uart_printf("\r\n=== ESP32 Chess with Capture Zones ===\r\n");
+    uart_printf("Board columns: 0-1 (captured black), 2-9 (playable), A-B (captured white)\r\n");
+    uart_printf("Enter moves using columns 2-9:\r\n");
     uart_printf("  1. row col - Select a piece and see possible moves\r\n");
-    uart_printf("  2. row1 col1 row2 col2 - Direct move (old format)\r\n");
-    uart_printf("Example: 6 4 (selects pawn at 6,4 and shows moves)\r\n");
-    uart_printf("Commands: quit, help, board, new, ai\r\n");
+    uart_printf("  2. row1 col1 row2 col2 - Direct move\r\n");
+    uart_printf("Example: 6 6 (selects pawn at row 6, column 6)\r\n");
+    uart_printf("Commands: quit, help, board, new\r\n\r\n");
 
-
-    string boardStr = board.displayBoard().str();
+    string boardStr = board.displayExpandedBoard().str();
     uart_printf("%s\r\n", boardStr.c_str());
 
     while (gameRunning) {
@@ -208,8 +361,8 @@ void chess_game_task(void *pvParameter) {
                 board = ChessBoard(8, 8);
                 setupStandardBoard(board);
                 currentPlayer = White;
-                uart_printf("\r\n=== NEW GAME ===\r\n");
-                boardStr = board.displayBoard().str();
+                uart_printf("\r\nNEW GAME\r\n");
+                boardStr = board.displayExpandedBoard().str();
                 uart_printf("%s\r\n", boardStr.c_str());
                 continue;
             } else {
@@ -224,8 +377,8 @@ void chess_game_task(void *pvParameter) {
                 board = ChessBoard(8, 8);
                 setupStandardBoard(board);
                 currentPlayer = White;
-                uart_printf("\r\n=== NEW GAME ===\r\n");
-                boardStr = board.displayBoard().str();
+                uart_printf("\r\nNEW GAME\r\n");
+                boardStr = board.displayExpandedBoard().str();
                 uart_printf("%s\r\n", boardStr.c_str());
                 continue;
             } else {
@@ -243,22 +396,27 @@ void chess_game_task(void *pvParameter) {
             uart_printf("Thanks for playing!\r\n");
             break;
         } else if (strcmp(input, "help") == 0) {
+            uart_printf("Board Layout:\r\n");
+            uart_printf("  Columns 0-1: Captured black pieces\r\n");
+            uart_printf("  Columns 2-9: Main chess board (playable area)\r\n");
+            uart_printf("  Columns A-B: Captured white pieces\r\n");
             uart_printf("Move formats:\r\n");
             uart_printf("  row col         - Select piece and see possible moves\r\n");
             uart_printf("  row1 col1 row2 col2 - Direct move\r\n");
             uart_printf("Examples:\r\n");
-            uart_printf("  6 4      - Select pawn at (6,4) and see moves\r\n");
-            uart_printf("  6 4 4 4  - Move directly from (6,4) to (4,4)\r\n");
+            uart_printf("  6 6      - Select pawn at row 6, column 6 (display)\r\n");
+            uart_printf("  6 6 4 6  - Move from (6,6) to (4,6)\r\n");
+            uart_printf("NOTE: Use columns 2-9 for chess moves (not 0-1 or A-B)\r\n");
             uart_printf("Special commands:\r\n");
             uart_printf("  'quit'  - Exit the game\r\n");
             uart_printf("  'help'  - Show this help\r\n");
             uart_printf("  'board' - Redraw the board\r\n");
             uart_printf("  'new'   - Start a new game\r\n");
-            uart_printf("  'ai'    - Let AI make a move (Black)\r\n");
+            uart_printf("  'test'  - Sensor simulation mode (detect move from 2 positions)\r\n");
 
             continue;
         } else if (strcmp(input, "board") == 0) {
-            boardStr = board.displayBoard().str();
+            boardStr = board.displayExpandedBoard().str();
             uart_printf("\r\n%s\r\n", boardStr.c_str());
             continue;
         } else if (strcmp(input, "new") == 0) {
@@ -266,29 +424,93 @@ void chess_game_task(void *pvParameter) {
             setupStandardBoard(board);
             currentPlayer = White;
             uart_printf("\r\n NEW GAME\r\n");
-            boardStr = board.displayBoard().str();
+            boardStr = board.displayExpandedBoard().str();
             uart_printf("%s\r\n", boardStr.c_str());
             continue;
-        } else if (strcmp(input, "ai") == 0 && currentPlayer == Black) {
-            makeAIMove(board);
-            currentPlayer = (currentPlayer == White) ? Black : White;
-            boardStr = board.displayBoard().str();
-            uart_printf("%s\r\n", boardStr.c_str());
+        } else if (strcmp(input, "test") == 0) {
+            bool testModeComplete = false;
+            while (!testModeComplete) {
+                uart_printf("[TEST MODE] Enter two positions (row1 col1 row2 col2): ");
+                uart_read_line(input, sizeof(input));
+
+                if (strcmp(input, "cancel") == 0) {
+                    uart_printf("Test mode cancelled.\r\n");
+                    break;
+                }
+
+                int nums[10];
+                int parseCount = sscanf(input, "%d %d %d %d %d %d %d %d %d %d",
+                                       &nums[0], &nums[1], &nums[2], &nums[3], &nums[4],
+                                       &nums[5], &nums[6], &nums[7], &nums[8], &nums[9]);
+
+                if (parseCount < 4) {
+                    uart_printf("Error: Please enter at least 4 numbers (row1 col1 row2 col2)\r\n");
+                    continue;
+                }
+
+                if (parseCount > 4) {
+                    int numPieces = (parseCount + 1) / 2;
+                    uart_printf("\r\nError! %d pieces picked up! Reset board and try again!\r\n", numPieces);
+
+                    boardStr = board.displayExpandedBoard().str();
+                    uart_printf("\r\n%s", boardStr.c_str());
+
+                    continue;
+                }
+
+                int testRow1 = nums[0];
+                int testCol1 = nums[1];
+                int testRow2 = nums[2];
+                int testCol2 = nums[3];
+
+                if (testRow1 < 0 || testRow1 > 7 || testRow2 < 0 || testRow2 > 7) {
+                    uart_printf("Error: Rows must be between 0 and 7.\r\n");
+                    continue;
+                }
+
+                int internalCol1 = translateColumn(testCol1);
+                int internalCol2 = translateColumn(testCol2);
+
+                if (internalCol1 == -1) {
+                    uart_printf("Error: Column %d is not on the playable board. Use columns 2-9.\r\n", testCol1);
+                    continue;
+                }
+                if (internalCol2 == -1) {
+                    uart_printf("Error: Column %d is not on the playable board. Use columns 2-9.\r\n", testCol2);
+                    continue;
+                }
+
+                if (testRow1 == testRow2 && internalCol1 == internalCol2) {
+                    uart_printf("Error: Both positions are the same! Please enter two different positions.\r\n");
+                    continue;
+                }
+
+                detectAndExecuteMove(board, testRow1, internalCol1, testRow2, internalCol2, currentPlayer);
+
+                boardStr = board.displayExpandedBoard().str();
+                uart_printf("\r\n%s\r\n", boardStr.c_str());
+
+                testModeComplete = true;
+            }
             continue;
         }
 
-        // First, parse for piece selection (2 numbers) or full move (4 numbers)
         int nums[4];
         int count = sscanf(input, "%d %d %d %d", &nums[0], &nums[1], &nums[2], &nums[3]);
 
         if (count == 2) {
-            // User selected a piece, show possible moves
             int fromRow = nums[0];
-            int fromCol = nums[1];
+            int displayCol = nums[1];
+            int fromCol = translateColumn(displayCol);
+
+            if (fromCol == -1) {
+                uart_printf("Column %d is not on the playable board. Use columns 2-9.\r\n", displayCol);
+                continue;
+            }
 
             ChessPiece* piece = board.getPiece(fromRow, fromCol);
             if (!piece) {
-                uart_printf("No piece at position (%d,%d)\r\n", fromRow, fromCol);
+                uart_printf("No piece at position (%d,%d)\r\n", fromRow, displayCol);
                 continue;
             }
 
@@ -297,7 +519,6 @@ void chess_game_task(void *pvParameter) {
                 continue;
             }
 
-            // Get possible moves for this piece
             std::vector<std::pair<int, int>> possibleMoves = board.getPossibleMoves(fromRow, fromCol);
 
             if (possibleMoves.empty()) {
@@ -305,13 +526,11 @@ void chess_game_task(void *pvParameter) {
                 continue;
             }
 
-            // Display possible moves
-            uart_printf("\r\nPossible moves for piece at (%d,%d):\r\n", fromRow, fromCol);
+            uart_printf("\r\nPossible moves for piece at (%d,%d):\r\n", fromRow, displayCol);
             for (size_t i = 0; i < possibleMoves.size(); i++) {
-                uart_printf("  %d: (%d,%d)\r\n", (int)(i + 1), possibleMoves[i].first, possibleMoves[i].second);
+                uart_printf("  %d: (%d,%d)\r\n", (int)(i + 1), possibleMoves[i].first, possibleMoves[i].second + 2);
             }
 
-            // Ask user to select a move
             uart_printf("\r\nEnter move number (1-%d) or 'cancel' to select different piece: ", (int)possibleMoves.size());
             uart_read_line(input, sizeof(input));
 
@@ -325,16 +544,28 @@ void chess_game_task(void *pvParameter) {
                 continue;
             }
 
-            // Execute the selected move
             int toRow = possibleMoves[moveChoice - 1].first;
             int toCol = possibleMoves[moveChoice - 1].second;
 
-            // Set the board's turn to match the current player
+            ChessPiece* targetPiece = board.getPiece(toRow, toCol);
+            if (targetPiece != nullptr) {
+                uart_printf("\r\nMOVING CAPTURED PIECE\r\n");
+
+                uart_printf("\r\nMovement complete (y or n)? ");
+                uart_read_line(input, sizeof(input));
+
+                if (input[0] != 'y' && input[0] != 'Y') {
+                    uart_printf("Capture cancelled.\r\n");
+                    continue;
+                }
+
+                uart_printf("Executing capture...\r\n");
+            }
+
             board.setTurn(currentPlayer);
 
             if (board.movePiece(fromRow, fromCol, toRow, toCol)) {
                 if (isKingInCheck(board, currentPlayer)) {
-                    // Need to undo the move - set turn back to current player for the undo
                     board.setTurn(currentPlayer);
                     board.movePiece(toRow, toCol, fromRow, fromCol);
                     uart_printf("Invalid move: would put your king in check!\r\n");
@@ -342,22 +573,33 @@ void chess_game_task(void *pvParameter) {
                 }
 
                 currentPlayer = (currentPlayer == White) ? Black : White;
-                boardStr = board.displayBoard().str();
+                boardStr = board.displayExpandedBoard().str();
                 uart_printf("\r\n%s\r\n", boardStr.c_str());
             } else {
                 uart_printf("Move failed!\r\n");
             }
 
         } else if (count == 4) {
-            // User provided full move (backward compatibility)
             int fromRow = nums[0];
-            int fromCol = nums[1];
+            int displayFromCol = nums[1];
             int toRow = nums[2];
-            int toCol = nums[3];
+            int displayToCol = nums[3];
+
+            int fromCol = translateColumn(displayFromCol);
+            int toCol = translateColumn(displayToCol);
+
+            if (fromCol == -1) {
+                uart_printf("From column %d is not on the playable board. Use columns 2-9.\r\n", displayFromCol);
+                continue;
+            }
+            if (toCol == -1) {
+                uart_printf("To column %d is not on the playable board. Use columns 2-9.\r\n", displayToCol);
+                continue;
+            }
 
             ChessPiece* piece = board.getPiece(fromRow, fromCol);
             if (!piece) {
-                uart_printf("No piece at position (%d,%d)\r\n", fromRow, fromCol);
+                uart_printf("No piece at position (%d,%d)\r\n", fromRow, displayFromCol);
                 continue;
             }
 
@@ -366,12 +608,25 @@ void chess_game_task(void *pvParameter) {
                 continue;
             }
 
-            // Set the board's turn to match the current player
+            ChessPiece* targetPiece = board.getPiece(toRow, toCol);
+            if (targetPiece != nullptr) {
+                uart_printf("\r\nMOVING CAPTURED PIECE\r\n");
+
+                uart_printf("\r\nMovement complete (y or n)? ");
+                uart_read_line(input, sizeof(input));
+
+                if (input[0] != 'y' && input[0] != 'Y') {
+                    uart_printf("Capture cancelled.\r\n");
+                    continue;
+                }
+
+                uart_printf("Executing capture...\r\n");
+            }
+
             board.setTurn(currentPlayer);
 
             if (board.movePiece(fromRow, fromCol, toRow, toCol)) {
                 if (isKingInCheck(board, currentPlayer)) {
-                    // Need to undo the move - set turn back to current player for the undo
                     board.setTurn(currentPlayer);
                     board.movePiece(toRow, toCol, fromRow, fromCol);
                     uart_printf("Invalid move: would put your king in check!\r\n");
@@ -379,7 +634,7 @@ void chess_game_task(void *pvParameter) {
                 }
 
                 currentPlayer = (currentPlayer == White) ? Black : White;
-                boardStr = board.displayBoard().str();
+                boardStr = board.displayExpandedBoard().str();
                 uart_printf("\r\n%s\r\n", boardStr.c_str());
             } else {
                 uart_printf("Invalid move!\r\n");
@@ -404,16 +659,14 @@ extern "C" {
 void app_main(void) {
     ESP_LOGI(TAG, "Starting ESP32 Chess Game");
 
-    uart_config_t uart_config = {
-        .baud_rate = 115200,
-        .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .rx_flow_ctrl_thresh = 0,
-        .source_clk = UART_SCLK_DEFAULT,
-        .flags = {0}
-    };
+    uart_config_t uart_config = {};
+    uart_config.baud_rate = 115200;
+    uart_config.data_bits = UART_DATA_8_BITS;
+    uart_config.parity = UART_PARITY_DISABLE;
+    uart_config.stop_bits = UART_STOP_BITS_1;
+    uart_config.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
+    uart_config.rx_flow_ctrl_thresh = 0;
+    uart_config.source_clk = UART_SCLK_DEFAULT;
 
     ESP_ERROR_CHECK(uart_driver_install(UART_NUM, BUF_SIZE * 2, 0, 0, NULL, 0));
     ESP_ERROR_CHECK(uart_param_config(UART_NUM, &uart_config));
