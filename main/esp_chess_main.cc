@@ -17,6 +17,10 @@
 #include "Chess.h"
 #include "ChessBoard.hh"
 #include "ChessPiece.hh"
+#include "BoardStateTracker.hh"
+#include "BoardStates.hh"
+#include "PathAnalyzer.hh"
+#include "ChessAI.hh"
 
 using namespace Student;
 using namespace std;
@@ -27,6 +31,24 @@ static const char *TAG = "ESP_CHESS";
 #define BUF_SIZE (1024)
 #define RD_BUF_SIZE (BUF_SIZE)
 
+
+//Bit sequences for pieces
+//000 or 111 = emtpy space
+//001 = Pawn
+//010 = Bishop
+//011 = Knight
+//100 = Rook
+//101 = Queen
+//110 = King
+
+//Bit sequences for color
+//0000 = Off
+//0001 = Red
+//1111 = White
+
+
+
+
 void setupStandardBoard(ChessBoard& board);
 bool isKingInCheck(ChessBoard& board, Color color);
 bool hasValidMoves(ChessBoard& board, Color color);
@@ -35,6 +57,7 @@ int translateColumn(int displayCol);
 void uart_printf(const char* format, ...);
 void detectAndExecuteMove(ChessBoard& board, int row1, int col1, int row2, int col2, Color& currentPlayer);
 void makeAIMove(ChessBoard& board, Color& currentPlayer);
+void makeMinimaxMove(ChessBoard& board, Color& currentPlayer, int depth);
 
 void setupStandardBoard(ChessBoard& board) {
     for (int col = 0; col < 8; col++) {
@@ -145,15 +168,82 @@ void makeAIMove(ChessBoard& board, Color& currentPlayer) {
         return;
     }
 
+    ChessPiece* aiPiece = board.getPiece(bestMove.fromRow, bestMove.fromCol);
+    ChessPiece* targetPiece = board.getPiece(bestMove.toRow, bestMove.toCol);
+    bool isCapture = (targetPiece != nullptr);
+
     uart_printf("AI moves from (%d,%d) to (%d,%d)\r\n",
                bestMove.fromRow, bestMove.fromCol + 2,
                bestMove.toRow, bestMove.toCol + 2);
 
     board.setTurn(currentPlayer);
     if (board.movePiece(bestMove.fromRow, bestMove.fromCol, bestMove.toRow, bestMove.toCol)) {
+        if (isCapture && aiPiece && targetPiece) {
+            auto captureDestination = PathAnalyzer::findCaptureZoneDestination(board, targetPiece->getColor());
+            PathType capturePath = PathAnalyzer::analyzeMovePath(bestMove.toRow, bestMove.toCol, captureDestination.first, captureDestination.second, board, targetPiece->getType(), false);
+            PathType attackPath = PathAnalyzer::analyzeMovePath(bestMove.fromRow, bestMove.fromCol, bestMove.toRow, bestMove.toCol, board, aiPiece->getType(), false);
+
+            uart_printf("Captured piece path: %s from (%d,%d) to (%d,%d)\r\n",
+                       PathAnalyzer::pathTypeToString(capturePath).c_str(),
+                       bestMove.toRow, bestMove.toCol + 2, captureDestination.first, captureDestination.second + 2);
+            uart_printf("Attacking piece path: %s from (%d,%d) to (%d,%d)\r\n",
+                       PathAnalyzer::pathTypeToString(attackPath).c_str(),
+                       bestMove.fromRow, bestMove.fromCol + 2, bestMove.toRow, bestMove.toCol + 2);
+        } else if (aiPiece) {
+            PathType movePath = PathAnalyzer::analyzeMovePath(bestMove.fromRow, bestMove.fromCol, bestMove.toRow, bestMove.toCol, board, aiPiece->getType(), false);
+            uart_printf("Movement path: %s from (%d,%d) to (%d,%d)\r\n",
+                       PathAnalyzer::pathTypeToString(movePath).c_str(),
+                       bestMove.fromRow, bestMove.fromCol + 2, bestMove.toRow, bestMove.toCol + 2);
+        }
         currentPlayer = (currentPlayer == White) ? Black : White;
     } else {
         uart_printf("AI move failed!\r\n");
+    }
+}
+
+void makeMinimaxMove(ChessBoard& board, Color& currentPlayer, int depth) {
+    uart_printf("\r\nMinimax AI thinking (depth %d)...\r\n", depth);
+
+    ChessAI ai;
+    AIMove bestMove = ai.findBestMove(board, currentPlayer, depth);
+
+    if (bestMove.fromRow == -1) {
+        uart_printf("Minimax AI has no valid moves!\r\n");
+        return;
+    }
+
+    uart_printf("Best move score: %.2f\r\n", bestMove.score);
+
+    ChessPiece* aiPiece = board.getPiece(bestMove.fromRow, bestMove.fromCol);
+    ChessPiece* targetPiece = board.getPiece(bestMove.toRow, bestMove.toCol);
+    bool isCapture = (targetPiece != nullptr);
+
+    uart_printf("Minimax AI moves from (%d,%d) to (%d,%d)\r\n",
+               bestMove.fromRow, bestMove.fromCol + 2,
+               bestMove.toRow, bestMove.toCol + 2);
+
+    board.setTurn(currentPlayer);
+    if (board.movePiece(bestMove.fromRow, bestMove.fromCol, bestMove.toRow, bestMove.toCol)) {
+        if (isCapture && aiPiece && targetPiece) {
+            auto captureDestination = PathAnalyzer::findCaptureZoneDestination(board, targetPiece->getColor());
+            PathType capturePath = PathAnalyzer::analyzeMovePath(bestMove.toRow, bestMove.toCol, captureDestination.first, captureDestination.second, board, targetPiece->getType(), false);
+            PathType attackPath = PathAnalyzer::analyzeMovePath(bestMove.fromRow, bestMove.fromCol, bestMove.toRow, bestMove.toCol, board, aiPiece->getType(), false);
+
+            uart_printf("Captured piece path: %s from (%d,%d) to (%d,%d)\r\n",
+                       PathAnalyzer::pathTypeToString(capturePath).c_str(),
+                       bestMove.toRow, bestMove.toCol + 2, captureDestination.first, captureDestination.second + 2);
+            uart_printf("Attacking piece path: %s from (%d,%d) to (%d,%d)\r\n",
+                       PathAnalyzer::pathTypeToString(attackPath).c_str(),
+                       bestMove.fromRow, bestMove.fromCol + 2, bestMove.toRow, bestMove.toCol + 2);
+        } else if (aiPiece) {
+            PathType movePath = PathAnalyzer::analyzeMovePath(bestMove.fromRow, bestMove.fromCol, bestMove.toRow, bestMove.toCol, board, aiPiece->getType(), false);
+            uart_printf("Movement path: %s from (%d,%d) to (%d,%d)\r\n",
+                       PathAnalyzer::pathTypeToString(movePath).c_str(),
+                       bestMove.fromRow, bestMove.fromCol + 2, bestMove.toRow, bestMove.toCol + 2);
+        }
+        currentPlayer = (currentPlayer == White) ? Black : White;
+    } else {
+        uart_printf("Minimax AI move failed!\r\n");
     }
 }
 
@@ -189,8 +279,12 @@ void detectAndExecuteMove(ChessBoard& board, int row1, int col1, int row2, int c
 
         board.setTurn(currentPlayer);
         if (board.movePiece(row1, col1, row2, col2)) {
+            PathType movePath = PathAnalyzer::analyzeMovePath(row1, col1, row2, col2, board, piece1->getType(), false);
             currentPlayer = (currentPlayer == White) ? Black : White;
             uart_printf("Move successful!\r\n");
+            uart_printf("Movement path: %s from (%d,%d) to (%d,%d)\r\n",
+                       PathAnalyzer::pathTypeToString(movePath).c_str(),
+                       row1, col1 + 2, row2, col2 + 2);
         } else {
             uart_printf("Error: Invalid move.\r\n");
         }
@@ -216,8 +310,12 @@ void detectAndExecuteMove(ChessBoard& board, int row1, int col1, int row2, int c
 
         board.setTurn(currentPlayer);
         if (board.movePiece(row2, col2, row1, col1)) {
+            PathType movePath = PathAnalyzer::analyzeMovePath(row2, col2, row1, col1, board, piece2->getType(), false);
             currentPlayer = (currentPlayer == White) ? Black : White;
             uart_printf("Move successful!\r\n");
+            uart_printf("Movement path: %s from (%d,%d) to (%d,%d)\r\n",
+                       PathAnalyzer::pathTypeToString(movePath).c_str(),
+                       row2, col2 + 2, row1, col1 + 2);
         } else {
             uart_printf("Error: Invalid move.\r\n");
         }
@@ -246,8 +344,10 @@ void detectAndExecuteMove(ChessBoard& board, int row1, int col1, int row2, int c
 
                     board.setTurn(currentPlayer);
                     if (board.movePiece(row1, kingCol, row1, newKingCol)) {
+                        PathType castlingPath = PathAnalyzer::analyzeMovePath(row1, kingCol, row1, newKingCol, board, King, true);
                         currentPlayer = (currentPlayer == White) ? Black : White;
                         uart_printf("Castling successful!\r\n");
+                        uart_printf("Movement path: %s\r\n", PathAnalyzer::pathTypeToString(castlingPath).c_str());
                     } else {
                         uart_printf("Error: Castling not allowed.\r\n");
                     }
@@ -258,8 +358,10 @@ void detectAndExecuteMove(ChessBoard& board, int row1, int col1, int row2, int c
 
                     board.setTurn(currentPlayer);
                     if (board.movePiece(row2, kingCol, row2, newKingCol)) {
+                        PathType castlingPath = PathAnalyzer::analyzeMovePath(row2, kingCol, row2, newKingCol, board, King, true);
                         currentPlayer = (currentPlayer == White) ? Black : White;
                         uart_printf("Castling successful!\r\n");
+                        uart_printf("Movement path: %s\r\n", PathAnalyzer::pathTypeToString(castlingPath).c_str());
                     } else {
                         uart_printf("Error: Castling not allowed.\r\n");
                     }
@@ -289,8 +391,18 @@ void detectAndExecuteMove(ChessBoard& board, int row1, int col1, int row2, int c
 
             board.setTurn(currentPlayer);
             if (board.movePiece(row1, col1, row2, col2)) {
+                auto captureDestination = PathAnalyzer::findCaptureZoneDestination(board, piece2->getColor());
+                PathType capturePath = PathAnalyzer::analyzeMovePath(row2, col2, captureDestination.first, captureDestination.second, board, piece2->getType(), false);
+                PathType attackPath = PathAnalyzer::analyzeMovePath(row1, col1, row2, col2, board, piece1->getType(), false);
+
                 currentPlayer = (currentPlayer == White) ? Black : White;
                 uart_printf("Capture successful!\r\n");
+                uart_printf("Captured piece path: %s from (%d,%d) to (%d,%d)\r\n",
+                           PathAnalyzer::pathTypeToString(capturePath).c_str(),
+                           row2, col2 + 2, captureDestination.first, captureDestination.second + 2);
+                uart_printf("Attacking piece path: %s from (%d,%d) to (%d,%d)\r\n",
+                           PathAnalyzer::pathTypeToString(attackPath).c_str(),
+                           row1, col1 + 2, row2, col2 + 2);
             } else {
                 uart_printf("Error: Invalid capture.\r\n");
             }
@@ -313,8 +425,18 @@ void detectAndExecuteMove(ChessBoard& board, int row1, int col1, int row2, int c
 
             board.setTurn(currentPlayer);
             if (board.movePiece(row2, col2, row1, col1)) {
+                auto captureDestination = PathAnalyzer::findCaptureZoneDestination(board, piece1->getColor());
+                PathType capturePath = PathAnalyzer::analyzeMovePath(row1, col1, captureDestination.first, captureDestination.second, board, piece1->getType(), false);
+                PathType attackPath = PathAnalyzer::analyzeMovePath(row2, col2, row1, col1, board, piece2->getType(), false);
+
                 currentPlayer = (currentPlayer == White) ? Black : White;
                 uart_printf("Capture successful!\r\n");
+                uart_printf("Captured piece path: %s from (%d,%d) to (%d,%d)\r\n",
+                           PathAnalyzer::pathTypeToString(capturePath).c_str(),
+                           row1, col1 + 2, captureDestination.first, captureDestination.second + 2);
+                uart_printf("Attacking piece path: %s from (%d,%d) to (%d,%d)\r\n",
+                           PathAnalyzer::pathTypeToString(attackPath).c_str(),
+                           row2, col2 + 2, row1, col1 + 2);
             } else {
                 uart_printf("Error: Invalid capture.\r\n");
             }
@@ -374,7 +496,7 @@ void chess_game_task(void *pvParameter) {
     uart_printf("  1. row col - Select a piece and see possible moves\r\n");
     uart_printf("  2. row1 col1 row2 col2 - Direct move\r\n");
     uart_printf("Example: 6 6 (selects pawn at row 6, column 6)\r\n");
-    uart_printf("Commands: quit, help, board, new, ai\r\n\r\n");
+    uart_printf("Commands: quit, help, board, new, ai, minimax [depth], state tracking\r\n\r\n");
 
     string boardStr = board.displayExpandedBoard().str();
     uart_printf("%s\r\n", boardStr.c_str());
@@ -445,7 +567,9 @@ void chess_game_task(void *pvParameter) {
             uart_printf("  'board' - Redraw the board\r\n");
             uart_printf("  'new'   - Start a new game\r\n");
             uart_printf("  'ai'    - Let AI make a move (Simple AI)\r\n");
+            uart_printf("  'minimax [depth]' - Let Minimax AI make a move (depth 1-4, default 2)\r\n");
             uart_printf("  'test'  - Sensor simulation mode (detect move from 2 positions)\r\n");
+            uart_printf("  'state tracking' - Replay and validate board states from Board_States folder\r\n");
 
             continue;
         } else if (strcmp(input, "board") == 0) {
@@ -462,6 +586,17 @@ void chess_game_task(void *pvParameter) {
             continue;
         } else if (strcmp(input, "ai") == 0) {
             makeAIMove(board, currentPlayer);
+            boardStr = board.displayExpandedBoard().str();
+            uart_printf("\r\n%s\r\n", boardStr.c_str());
+            continue;
+        } else if (strncmp(input, "minimax", 7) == 0) {
+            int depth = 2;
+            if (strlen(input) > 8) {
+                sscanf(input + 8, "%d", &depth);
+                if (depth < 1) depth = 1;
+                if (depth > 4) depth = 4;
+            }
+            makeMinimaxMove(board, currentPlayer, depth);
             boardStr = board.displayExpandedBoard().str();
             uart_printf("\r\n%s\r\n", boardStr.c_str());
             continue;
@@ -530,6 +665,80 @@ void chess_game_task(void *pvParameter) {
 
                 testModeComplete = true;
             }
+            continue;
+        } else if (strcmp(input, "state tracking") == 0) {
+            if (NUM_BOARD_STATES == 0) {
+                uart_printf("Error: No board state files found.\r\n");
+                continue;
+            }
+
+            uart_printf("\r\n=== Starting State Tracking Mode ===\r\n");
+            uart_printf("Found %d board state files.\r\n\r\n", NUM_BOARD_STATES);
+
+            BoardStateTracker tracker;
+
+            if (!tracker.validateStartingPosition((bool(*)[8])BOARD_STATES[0])) {
+                uart_printf("Error: Board_State_0 does not match expected starting position.\r\n");
+                tracker.showExpectedStartingPosition();
+                uart_printf("Please correct Board_State_0.txt and rebuild.\r\n");
+                continue;
+            }
+
+            uart_printf("Board_State_0 validated successfully.\r\n");
+            uart_printf("Initializing tracking board...\r\n\r\n");
+
+            ChessBoard trackingBoard(8, 8);
+            tracker.initializeTracking(trackingBoard, (bool(*)[8])BOARD_STATES[0]);
+            Color trackingPlayer = White;
+
+            uart_printf("Initial board state (Board_State_0):\r\n");
+            boardStr = trackingBoard.displayExpandedBoard().str();
+            uart_printf("%s\r\n", boardStr.c_str());
+
+            int currentStateIndex = 1;
+            bool tracking = true;
+
+            while (tracking && currentStateIndex < NUM_BOARD_STATES) {
+                uart_printf("Press 'y' to advance to Board_State_%d, 'n' to exit: ", currentStateIndex);
+                uart_read_line(input, sizeof(input));
+
+                if (strcmp(input, "n") == 0 || strcmp(input, "N") == 0) {
+                    uart_printf("Exiting state tracking mode.\r\n");
+                    tracking = false;
+                    break;
+                }
+
+                if (strcmp(input, "y") == 0 || strcmp(input, "Y") == 0) {
+                    uart_printf("\r\nProcessing Board_State_%d...\r\n", currentStateIndex);
+
+                    bool success = tracker.processNextState(
+                        trackingBoard,
+                        (bool(*)[8])BOARD_STATES[currentStateIndex - 1],
+                        (bool(*)[8])BOARD_STATES[currentStateIndex],
+                        trackingPlayer
+                    );
+
+                    if (success) {
+                        uart_printf("\r\nBoard after move:\r\n");
+                        boardStr = trackingBoard.displayExpandedBoard().str();
+                        uart_printf("%s\r\n", boardStr.c_str());
+                        currentStateIndex++;
+                    } else {
+                        uart_printf("\r\nCurrent valid board state (what your board should look like):\r\n");
+                        boardStr = trackingBoard.displayExpandedBoard().str();
+                        uart_printf("%s\r\n", boardStr.c_str());
+                        uart_printf("Staying on last valid board state. Press 'y' when Board_State_%d is corrected, or 'n' to exit.\r\n", currentStateIndex);
+                    }
+                } else {
+                    uart_printf("Invalid input. Please enter 'y' or 'n'.\r\n");
+                }
+            }
+
+            if (currentStateIndex >= NUM_BOARD_STATES) {
+                uart_printf("\r\n=== All board states processed successfully ===\r\n");
+            }
+
+            uart_printf("Returning to normal game mode.\r\n\r\n");
             continue;
         }
 
@@ -600,6 +809,7 @@ void chess_game_task(void *pvParameter) {
                 uart_printf("Executing capture...\r\n");
             }
 
+            ChessPiece* movingPiece = board.getPiece(fromRow, fromCol);
             board.setTurn(currentPlayer);
 
             if (board.movePiece(fromRow, fromCol, toRow, toCol)) {
@@ -608,6 +818,24 @@ void chess_game_task(void *pvParameter) {
                     board.movePiece(toRow, toCol, fromRow, fromCol);
                     uart_printf("Invalid move: would put your king in check!\r\n");
                     continue;
+                }
+
+                if (targetPiece != nullptr && movingPiece) {
+                    auto captureDestination = PathAnalyzer::findCaptureZoneDestination(board, targetPiece->getColor());
+                    PathType capturePath = PathAnalyzer::analyzeMovePath(toRow, toCol, captureDestination.first, captureDestination.second, board, targetPiece->getType(), false);
+                    PathType attackPath = PathAnalyzer::analyzeMovePath(fromRow, fromCol, toRow, toCol, board, movingPiece->getType(), false);
+
+                    uart_printf("Captured piece path: %s from (%d,%d) to (%d,%d)\r\n",
+                               PathAnalyzer::pathTypeToString(capturePath).c_str(),
+                               toRow, toCol + 2, captureDestination.first, captureDestination.second + 2);
+                    uart_printf("Attacking piece path: %s from (%d,%d) to (%d,%d)\r\n",
+                               PathAnalyzer::pathTypeToString(attackPath).c_str(),
+                               fromRow, fromCol + 2, toRow, toCol + 2);
+                } else if (movingPiece) {
+                    PathType movePath = PathAnalyzer::analyzeMovePath(fromRow, fromCol, toRow, toCol, board, movingPiece->getType(), false);
+                    uart_printf("Movement path: %s from (%d,%d) to (%d,%d)\r\n",
+                               PathAnalyzer::pathTypeToString(movePath).c_str(),
+                               fromRow, fromCol + 2, toRow, toCol + 2);
                 }
 
                 currentPlayer = (currentPlayer == White) ? Black : White;
@@ -669,6 +897,24 @@ void chess_game_task(void *pvParameter) {
                     board.movePiece(toRow, toCol, fromRow, fromCol);
                     uart_printf("Invalid move: would put your king in check!\r\n");
                     continue;
+                }
+
+                if (targetPiece != nullptr && piece) {
+                    auto captureDestination = PathAnalyzer::findCaptureZoneDestination(board, targetPiece->getColor());
+                    PathType capturePath = PathAnalyzer::analyzeMovePath(toRow, toCol, captureDestination.first, captureDestination.second, board, targetPiece->getType(), false);
+                    PathType attackPath = PathAnalyzer::analyzeMovePath(fromRow, fromCol, toRow, toCol, board, piece->getType(), false);
+
+                    uart_printf("Captured piece path: %s from (%d,%d) to (%d,%d)\r\n",
+                               PathAnalyzer::pathTypeToString(capturePath).c_str(),
+                               toRow, toCol + 2, captureDestination.first, captureDestination.second + 2);
+                    uart_printf("Attacking piece path: %s from (%d,%d) to (%d,%d)\r\n",
+                               PathAnalyzer::pathTypeToString(attackPath).c_str(),
+                               fromRow, fromCol + 2, toRow, toCol + 2);
+                } else if (piece) {
+                    PathType movePath = PathAnalyzer::analyzeMovePath(fromRow, fromCol, toRow, toCol, board, piece->getType(), false);
+                    uart_printf("Movement path: %s from (%d,%d) to (%d,%d)\r\n",
+                               PathAnalyzer::pathTypeToString(movePath).c_str(),
+                               fromRow, fromCol + 2, toRow, toCol + 2);
                 }
 
                 currentPlayer = (currentPlayer == White) ? Black : White;

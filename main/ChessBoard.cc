@@ -69,6 +69,26 @@ namespace Student
         }
     }
 
+    void ChessBoard::removeCapturedPiece(ChessPiece* piece) {
+        if (piece == nullptr) return;
+
+        // Remove from white captured pieces
+        for (auto it = capturedWhitePieces.begin(); it != capturedWhitePieces.end(); ++it) {
+            if (*it == piece) {
+                capturedWhitePieces.erase(it);
+                return;
+            }
+        }
+
+        // Remove from black captured pieces
+        for (auto it = capturedBlackPieces.begin(); it != capturedBlackPieces.end(); ++it) {
+            if (*it == piece) {
+                capturedBlackPieces.erase(it);
+                return;
+            }
+        }
+    }
+
     void ChessBoard::createChessPiece(Color col, Type ty, int startRow, int startColumn)
     {
         if (board.at(startRow).at(startColumn) != nullptr)

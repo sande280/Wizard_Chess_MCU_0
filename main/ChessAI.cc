@@ -1,119 +1,135 @@
 #include "ChessAI.hh"
+#include "ChessPiece.hh"
 #include <algorithm>
-#include <random>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include <climits>
 
 namespace Student {
 
-int ChessAI::getPieceValue(Type pieceType) {
-    switch (pieceType) {
-        case Pawn: return 100;
-        case Knight: return 320;
-        case Bishop: return 330;
-        case Rook: return 500;
-        case Queen: return 900;
-        case King: return 20000;
-        default: return 0;
+// Position tables - encode chess knowledge
+
+// Pawns: reward center control and advancement
+const float ChessAI::PAWN_TABLE[8][8] = {
+    {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+    {0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5},
+    {0.1, 0.1, 0.2, 0.3, 0.3, 0.2, 0.1, 0.1},
+    {0.05, 0.05, 0.1, 0.25, 0.25, 0.1, 0.05, 0.05},
+    {0.0, 0.0, 0.0, 0.2, 0.2, 0.0, 0.0, 0.0},
+    {0.05, -0.05, -0.1, 0.0, 0.0, -0.1, -0.05, 0.05},
+    {0.05, 0.1, 0.1, -0.2, -0.2, 0.1, 0.1, 0.05},
+    {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}
+};
+
+// Knights: penalize edges, reward center
+const float ChessAI::KNIGHT_TABLE[8][8] = {
+    {-0.5, -0.4, -0.3, -0.3, -0.3, -0.3, -0.4, -0.5},
+    {-0.4, -0.2,  0.0,  0.0,  0.0,  0.0, -0.2, -0.4},
+    {-0.3,  0.0,  0.1,  0.15, 0.15, 0.1,  0.0, -0.3},
+    {-0.3,  0.05, 0.15, 0.2,  0.2,  0.15, 0.05, -0.3},
+    {-0.3,  0.0,  0.15, 0.2,  0.2,  0.15, 0.0, -0.3},
+    {-0.3,  0.05, 0.1,  0.15, 0.15, 0.1,  0.05, -0.3},
+    {-0.4, -0.2,  0.0,  0.05, 0.05, 0.0, -0.2, -0.4},
+    {-0.5, -0.4, -0.3, -0.3, -0.3, -0.3, -0.4, -0.5}
+};
+
+// Bishops: reward long diagonals
+const float ChessAI::BISHOP_TABLE[8][8] = {
+    {-0.2, -0.1, -0.1, -0.1, -0.1, -0.1, -0.1, -0.2},
+    {-0.1,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -0.1},
+    {-0.1,  0.0,  0.05, 0.1,  0.1,  0.05, 0.0, -0.1},
+    {-0.1,  0.05, 0.05, 0.1,  0.1,  0.05, 0.05, -0.1},
+    {-0.1,  0.0,  0.1,  0.1,  0.1,  0.1,  0.0, -0.1},
+    {-0.1,  0.1,  0.1,  0.1,  0.1,  0.1,  0.1, -0.1},
+    {-0.1,  0.05, 0.0,  0.0,  0.0,  0.0,  0.05, -0.1},
+    {-0.2, -0.1, -0.1, -0.1, -0.1, -0.1, -0.1, -0.2}
+};
+
+// Rooks: prefer 7th rank and open files
+const float ChessAI::ROOK_TABLE[8][8] = {
+    {0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0},
+    {0.05, 0.1,  0.1,  0.1,  0.1,  0.1,  0.1,  0.05},
+    {-0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -0.05},
+    {-0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -0.05},
+    {-0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -0.05},
+    {-0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -0.05},
+    {-0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -0.05},
+    {0.0,  0.0,  0.0,  0.05, 0.05, 0.0,  0.0,  0.0}
+};
+
+// Queens: slight center preference
+const float ChessAI::QUEEN_TABLE[8][8] = {
+    {-0.2, -0.1, -0.1, -0.05, -0.05, -0.1, -0.1, -0.2},
+    {-0.1,  0.0,  0.0,  0.0,   0.0,   0.0,  0.0, -0.1},
+    {-0.1,  0.0,  0.05, 0.05,  0.05,  0.05, 0.0, -0.1},
+    {-0.05, 0.0,  0.05, 0.05,  0.05,  0.05, 0.0, -0.05},
+    { 0.0,  0.0,  0.05, 0.05,  0.05,  0.05, 0.0, -0.05},
+    {-0.1,  0.05, 0.05, 0.05,  0.05,  0.05, 0.0, -0.1},
+    {-0.1,  0.0,  0.05, 0.0,   0.0,   0.0,  0.0, -0.1},
+    {-0.2, -0.1, -0.1, -0.05, -0.05, -0.1, -0.1, -0.2}
+};
+
+// King: stay safe early game (back rank), more active endgame
+const float ChessAI::KING_TABLE[8][8] = {
+    {-0.3, -0.4, -0.4, -0.5, -0.5, -0.4, -0.4, -0.3},
+    {-0.3, -0.4, -0.4, -0.5, -0.5, -0.4, -0.4, -0.3},
+    {-0.3, -0.4, -0.4, -0.5, -0.5, -0.4, -0.4, -0.3},
+    {-0.3, -0.4, -0.4, -0.5, -0.5, -0.4, -0.4, -0.3},
+    {-0.2, -0.3, -0.3, -0.4, -0.4, -0.3, -0.3, -0.2},
+    {-0.1, -0.2, -0.2, -0.2, -0.2, -0.2, -0.2, -0.1},
+    { 0.2,  0.2,  0.0,  0.0,  0.0,  0.0,  0.2,  0.2},
+    { 0.2,  0.3,  0.1,  0.0,  0.0,  0.1,  0.3,  0.2}
+};
+
+ChessAI::ChessAI() : nodesEvaluated(0) {
+}
+
+float ChessAI::getPieceValue(Type type) {
+    switch (type) {
+        case Pawn:   return 1.0f;
+        case Knight: return 3.0f;
+        case Bishop: return 3.1f;  // Slightly prefer bishops over knights
+        case Rook:   return 5.0f;
+        case Queen:  return 9.0f;
+        case King:   return 1000.0f;  // King is invaluable
+        default:     return 0.0f;
     }
 }
 
-int ChessAI::getPositionBonus(Type pieceType, int row, int col, Color color) {
-    static const int pawnTable[8][8] = {
-        { 0,  0,  0,  0,  0,  0,  0,  0},
-        {50, 50, 50, 50, 50, 50, 50, 50},
-        {10, 10, 20, 30, 30, 20, 10, 10},
-        { 5,  5, 10, 25, 25, 10,  5,  5},
-        { 0,  0,  0, 20, 20,  0,  0,  0},
-        { 5, -5,-10,  0,  0,-10, -5,  5},
-        { 5, 10, 10,-20,-20, 10, 10,  5},
-        { 0,  0,  0,  0,  0,  0,  0,  0}
-    };
+float ChessAI::getPositionBonus(ChessPiece* piece, int row, int col) {
+    // Flip row for black pieces (they see the board from opposite side)
+    int tableRow = (piece->getColor() == White) ? row : (7 - row);
 
-    static const int knightTable[8][8] = {
-        {-50,-40,-30,-30,-30,-30,-40,-50},
-        {-40,-20,  0,  0,  0,  0,-20,-40},
-        {-30,  0, 10, 15, 15, 10,  0,-30},
-        {-30,  5, 15, 20, 20, 15,  5,-30},
-        {-30,  0, 15, 20, 20, 15,  0,-30},
-        {-30,  5, 10, 15, 15, 10,  5,-30},
-        {-40,-20,  0,  5,  5,  0,-20,-40},
-        {-50,-40,-30,-30,-30,-30,-40,-50}
-    };
-
-    static const int bishopTable[8][8] = {
-        {-20,-10,-10,-10,-10,-10,-10,-20},
-        {-10,  0,  0,  0,  0,  0,  0,-10},
-        {-10,  0,  5, 10, 10,  5,  0,-10},
-        {-10,  5,  5, 10, 10,  5,  5,-10},
-        {-10,  0, 10, 10, 10, 10,  0,-10},
-        {-10, 10, 10, 10, 10, 10, 10,-10},
-        {-10,  5,  0,  0,  0,  0,  5,-10},
-        {-20,-10,-10,-10,-10,-10,-10,-20}
-    };
-
-    static const int rookTable[8][8] = {
-        { 0,  0,  0,  0,  0,  0,  0,  0},
-        { 5, 10, 10, 10, 10, 10, 10,  5},
-        {-5,  0,  0,  0,  0,  0,  0, -5},
-        {-5,  0,  0,  0,  0,  0,  0, -5},
-        {-5,  0,  0,  0,  0,  0,  0, -5},
-        {-5,  0,  0,  0,  0,  0,  0, -5},
-        {-5,  0,  0,  0,  0,  0,  0, -5},
-        { 0,  0,  0,  5,  5,  0,  0,  0}
-    };
-
-    static const int queenTable[8][8] = {
-        {-20,-10,-10, -5, -5,-10,-10,-20},
-        {-10,  0,  0,  0,  0,  0,  0,-10},
-        {-10,  0,  5,  5,  5,  5,  0,-10},
-        { -5,  0,  5,  5,  5,  5,  0, -5},
-        {  0,  0,  5,  5,  5,  5,  0, -5},
-        {-10,  5,  5,  5,  5,  5,  0,-10},
-        {-10,  0,  5,  0,  0,  0,  0,-10},
-        {-20,-10,-10, -5, -5,-10,-10,-20}
-    };
-
-    static const int kingMiddleTable[8][8] = {
-        {-30,-40,-40,-50,-50,-40,-40,-30},
-        {-30,-40,-40,-50,-50,-40,-40,-30},
-        {-30,-40,-40,-50,-50,-40,-40,-30},
-        {-30,-40,-40,-50,-50,-40,-40,-30},
-        {-20,-30,-30,-40,-40,-30,-30,-20},
-        {-10,-20,-20,-20,-20,-20,-20,-10},
-        { 20, 20,  0,  0,  0,  0, 20, 20},
-        { 20, 30, 10,  0,  0, 10, 30, 20}
-    };
-
-    int actualRow = (color == White) ? (7 - row) : row;
-
-    switch (pieceType) {
-        case Pawn: return pawnTable[actualRow][col];
-        case Knight: return knightTable[actualRow][col];
-        case Bishop: return bishopTable[actualRow][col];
-        case Rook: return rookTable[actualRow][col];
-        case Queen: return queenTable[actualRow][col];
-        case King: return kingMiddleTable[actualRow][col];
-        default: return 0;
+    float bonus = 0.0f;
+    switch (piece->getType()) {
+        case Pawn:   bonus = PAWN_TABLE[tableRow][col]; break;
+        case Knight: bonus = KNIGHT_TABLE[tableRow][col]; break;
+        case Bishop: bonus = BISHOP_TABLE[tableRow][col]; break;
+        case Rook:   bonus = ROOK_TABLE[tableRow][col]; break;
+        case Queen:  bonus = QUEEN_TABLE[tableRow][col]; break;
+        case King:   bonus = KING_TABLE[tableRow][col]; break;
+        default:     bonus = 0.0f;
     }
+
+    return bonus;
 }
 
-int ChessAI::evaluateBoard(ChessBoard& board, Color maximizingColor) {
-    int score = 0;
+float ChessAI::evaluate(ChessBoard& board, Color perspective) {
+    float score = 0.0f;
 
+    // Single pass through board - O(64) complexity
     for (int row = 0; row < 8; row++) {
         for (int col = 0; col < 8; col++) {
             ChessPiece* piece = board.getPiece(row, col);
-            if (piece != nullptr) {
-                int pieceValue = getPieceValue(piece->getType());
-                int positionBonus = getPositionBonus(piece->getType(), row, col, piece->getColor());
-                int totalValue = pieceValue + positionBonus;
+            if (!piece) continue;
 
-                if (piece->getColor() == maximizingColor) {
-                    score += totalValue;
-                } else {
-                    score -= totalValue;
-                }
+            // Get base value + position bonus
+            float value = getPieceValue(piece->getType());
+            value += getPositionBonus(piece, row, col);
+
+            // Add or subtract based on whose perspective
+            if (piece->getColor() == perspective) {
+                score += value;
+            } else {
+                score -= value;
             }
         }
     }
@@ -121,249 +137,182 @@ int ChessAI::evaluateBoard(ChessBoard& board, Color maximizingColor) {
     return score;
 }
 
-std::vector<ChessAI::Move> ChessAI::generateAllMoves(ChessBoard& board, Color color) {
-    std::vector<Move> moves;
-    Color savedTurn = board.getTurn();
-    board.setTurn(color);
+float ChessAI::minimax(ChessBoard& board, int depth, float alpha, float beta,
+                       bool maximizing, Color perspective) {
+    // Terminal node: evaluate position
+    if (depth == 0) {
+        nodesEvaluated++;
+        return evaluate(board, perspective);
+    }
+
+    Color currentPlayer = maximizing ? perspective :
+                          (perspective == White ? Black : White);
+
+    // Generate all legal moves for current player
+    std::vector<std::pair<std::pair<int, int>, std::pair<int, int>>> allMoves;
 
     for (int fromRow = 0; fromRow < 8; fromRow++) {
         for (int fromCol = 0; fromCol < 8; fromCol++) {
             ChessPiece* piece = board.getPiece(fromRow, fromCol);
-            if (piece && piece->getColor() == color) {
-                std::vector<std::pair<int, int>> possibleMoves = board.getPossibleMoves(fromRow, fromCol);
-                for (const auto& move : possibleMoves) {
-                    moves.push_back(Move(fromRow, fromCol, move.first, move.second));
-                }
+            if (!piece || piece->getColor() != currentPlayer) continue;
+
+            std::vector<std::pair<int, int>> possibleMoves = board.getPossibleMoves(fromRow, fromCol);
+
+            for (const auto& move : possibleMoves) {
+                allMoves.push_back(std::make_pair(
+                    std::make_pair(fromRow, fromCol),
+                    std::make_pair(move.first, move.second)
+                ));
             }
         }
     }
 
-    board.setTurn(savedTurn);
-    return moves;
-}
-
-void ChessAI::orderMoves(std::vector<Move>& moves, ChessBoard& board) {
-    for (auto& move : moves) {
-        move.score = 0;
-
-        ChessPiece* targetPiece = board.getPiece(move.toRow, move.toCol);
-        if (targetPiece != nullptr) {
-            move.score = 10 * getPieceValue(targetPiece->getType());
-            ChessPiece* attackingPiece = board.getPiece(move.fromRow, move.fromCol);
-            if (attackingPiece != nullptr) {
-                move.score -= getPieceValue(attackingPiece->getType());
-            }
-        }
-
-        if ((move.toRow == 3 || move.toRow == 4) && (move.toCol == 3 || move.toCol == 4)) {
-            move.score += 50;
-        }
+    // No legal moves - stalemate or checkmate (simplified)
+    if (allMoves.empty()) {
+        return 0.0f;  // Treat as draw for now
     }
 
-    std::sort(moves.begin(), moves.end(), [](const Move& a, const Move& b) {
-        return a.score > b.score;
-    });
-}
+    if (maximizing) {
+        float maxEval = -999999.0f;
 
-bool ChessAI::isKingInCheck(ChessBoard& board, Color color) {
-    int kingRow = -1, kingCol = -1;
-    for (int row = 0; row < 8; row++) {
-        for (int col = 0; col < 8; col++) {
-            ChessPiece* piece = board.getPiece(row, col);
-            if (piece && piece->getColor() == color && piece->getType() == King) {
-                kingRow = row;
-                kingCol = col;
-                break;
-            }
-        }
-        if (kingRow != -1) break;
-    }
+        for (const auto& moveP : allMoves) {
+            int fromRow = moveP.first.first;
+            int fromCol = moveP.first.second;
+            int toRow = moveP.second.first;
+            int toCol = moveP.second.second;
 
-    if (kingRow == -1) return false;
+            // Save state (capture piece if present)
+            ChessPiece* capturedPiece = board.getPiece(toRow, toCol);
+            ChessPiece* movingPiece = board.getPiece(fromRow, fromCol);
 
-    Color opponentColor = (color == White) ? Black : White;
-    for (int row = 0; row < 8; row++) {
-        for (int col = 0; col < 8; col++) {
-            ChessPiece* piece = board.getPiece(row, col);
-            if (piece && piece->getColor() == opponentColor) {
-                if (piece->canMoveToLocation(kingRow, kingCol)) {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
-}
-
-bool ChessAI::hasValidMoves(ChessBoard& board, Color color) {
-    Color savedTurn = board.getTurn();
-    board.setTurn(color);
-
-    for (int fromRow = 0; fromRow < 8; fromRow++) {
-        for (int fromCol = 0; fromCol < 8; fromCol++) {
-            ChessPiece* piece = board.getPiece(fromRow, fromCol);
-            if (piece && piece->getColor() == color) {
-                std::vector<std::pair<int, int>> possibleMoves = board.getPossibleMoves(fromRow, fromCol);
-                if (!possibleMoves.empty()) {
-                    board.setTurn(savedTurn);
-                    return true;
-                }
-            }
-        }
-    }
-
-    board.setTurn(savedTurn);
-    return false;
-}
-
-bool ChessAI::isGameOver(ChessBoard& board, Color currentPlayer) {
-    return !hasValidMoves(board, currentPlayer);
-}
-
-int ChessAI::minimax(ChessBoard& board, int depth, int alpha, int beta,
-                     bool isMaximizingPlayer, Color maximizingColor) {
-    Color currentPlayer = isMaximizingPlayer ? maximizingColor :
-                         ((maximizingColor == White) ? Black : White);
-
-    if (depth == 0 || isGameOver(board, currentPlayer)) {
-        int eval = evaluateBoard(board, maximizingColor);
-
-        if (!hasValidMoves(board, currentPlayer)) {
-            if (isKingInCheck(board, currentPlayer)) {
-                return isMaximizingPlayer ? -CHECKMATE_SCORE + (MAX_DEPTH - depth) :
-                                           CHECKMATE_SCORE - (MAX_DEPTH - depth);
-            }
-            return 0;
-        }
-        return eval;
-    }
-
-    std::vector<Move> moves = generateAllMoves(board, currentPlayer);
-    orderMoves(moves, board);
-
-    static int nodeCount = 0;
-
-    if (isMaximizingPlayer) {
-        int maxEval = -INFINITY_SCORE;
-        for (size_t i = 0; i < moves.size(); i++) {
-            const auto& move = moves[i];
-
-            // Save the piece at the destination (if any) before moving
-            ChessPiece* movingPiece = board.getPiece(move.fromRow, move.fromCol);
-            ChessPiece* capturedPiece = board.getPiece(move.toRow, move.toCol);
-
-            if (movingPiece == nullptr) continue;
-
+            // Make move
             board.setTurn(currentPlayer);
-            if (board.movePiece(move.fromRow, move.fromCol, move.toRow, move.toCol)) {
-                int eval = minimax(board, depth - 1, alpha, beta, false, maximizingColor);
+            bool moveSuccess = board.movePiece(fromRow, fromCol, toRow, toCol);
 
-                // Undo the move by restoring pieces to original positions
-                board.setTurn(currentPlayer);
-                board.restorePiece(move.fromRow, move.fromCol, movingPiece);
-                board.restorePiece(move.toRow, move.toCol, capturedPiece);
-
-                maxEval = std::max(maxEval, eval);
-                alpha = std::max(alpha, eval);
-                if (beta <= alpha) {
-                    break;
-                }
+            if (!moveSuccess) {
+                // Move failed (shouldn't happen with getPossibleMoves), skip
+                continue;
             }
 
-            // Periodically yield to prevent watchdog timeout
-            nodeCount++;
-            if (nodeCount % 50 == 0) {
-                vTaskDelay(1 / portTICK_PERIOD_MS);
+            // Recurse
+            float eval = minimax(board, depth - 1, alpha, beta, false, perspective);
+
+            // Undo move
+            board.restorePiece(fromRow, fromCol, movingPiece);
+            if (capturedPiece != nullptr) {
+                board.removeCapturedPiece(capturedPiece);
+                board.restorePiece(toRow, toCol, capturedPiece);
+            } else {
+                board.restorePiece(toRow, toCol, nullptr);
+            }
+            movingPiece->setPosition(fromRow, fromCol);
+
+            maxEval = std::max(maxEval, eval);
+            alpha = std::max(alpha, eval);
+            if (beta <= alpha) {
+                break;  // Beta cutoff
             }
         }
         return maxEval;
+
     } else {
-        int minEval = INFINITY_SCORE;
-        for (size_t i = 0; i < moves.size(); i++) {
-            const auto& move = moves[i];
+        float minEval = 999999.0f;
 
-            // Save the piece at the destination (if any) before moving
-            ChessPiece* movingPiece = board.getPiece(move.fromRow, move.fromCol);
-            ChessPiece* capturedPiece = board.getPiece(move.toRow, move.toCol);
+        for (const auto& moveP : allMoves) {
+            int fromRow = moveP.first.first;
+            int fromCol = moveP.first.second;
+            int toRow = moveP.second.first;
+            int toCol = moveP.second.second;
 
-            if (movingPiece == nullptr) continue;
+            // Save state
+            ChessPiece* capturedPiece = board.getPiece(toRow, toCol);
+            ChessPiece* movingPiece = board.getPiece(fromRow, fromCol);
 
+            // Make move
             board.setTurn(currentPlayer);
-            if (board.movePiece(move.fromRow, move.fromCol, move.toRow, move.toCol)) {
-                int eval = minimax(board, depth - 1, alpha, beta, true, maximizingColor);
+            bool moveSuccess = board.movePiece(fromRow, fromCol, toRow, toCol);
 
-                // Undo the move by restoring pieces to original positions
-                board.setTurn(currentPlayer);
-                board.restorePiece(move.fromRow, move.fromCol, movingPiece);
-                board.restorePiece(move.toRow, move.toCol, capturedPiece);
-
-                minEval = std::min(minEval, eval);
-                beta = std::min(beta, eval);
-                if (beta <= alpha) {
-                    break;
-                }
+            if (!moveSuccess) {
+                continue;
             }
 
-            // Periodically yield to prevent watchdog timeout
-            nodeCount++;
-            if (nodeCount % 50 == 0) {
-                vTaskDelay(1 / portTICK_PERIOD_MS);
+            // Recurse
+            float eval = minimax(board, depth - 1, alpha, beta, true, perspective);
+
+            // Undo move
+            board.restorePiece(fromRow, fromCol, movingPiece);
+            if (capturedPiece != nullptr) {
+                board.removeCapturedPiece(capturedPiece);
+                board.restorePiece(toRow, toCol, capturedPiece);
+            } else {
+                board.restorePiece(toRow, toCol, nullptr);
+            }
+            movingPiece->setPosition(fromRow, fromCol);
+
+            minEval = std::min(minEval, eval);
+            beta = std::min(beta, eval);
+            if (beta <= alpha) {
+                break;  // Alpha cutoff
             }
         }
         return minEval;
     }
 }
 
-ChessAI::Move ChessAI::findBestMove(ChessBoard& board, Color aiColor) {
-    Move bestMove;
-    int bestScore = -INFINITY_SCORE;
-    int alpha = -INFINITY_SCORE;
-    int beta = INFINITY_SCORE;
+AIMove ChessAI::findBestMove(ChessBoard& board, Color aiColor, int depth) {
+    AIMove bestMove;
+    nodesEvaluated = 0;
 
-    std::vector<Move> moves = generateAllMoves(board, aiColor);
-    orderMoves(moves, board);
+    float alpha = -999999.0f;
+    float beta = 999999.0f;
 
-    if (moves.empty()) {
-        return bestMove;
-    }
+    // Generate all legal moves for AI
+    for (int fromRow = 0; fromRow < 8; fromRow++) {
+        for (int fromCol = 0; fromCol < 8; fromCol++) {
+            ChessPiece* piece = board.getPiece(fromRow, fromCol);
+            if (!piece || piece->getColor() != aiColor) continue;
 
-    for (size_t i = 0; i < moves.size(); i++) {
-        const auto& move = moves[i];
+            std::vector<std::pair<int, int>> possibleMoves = board.getPossibleMoves(fromRow, fromCol);
 
-        // Save the pieces before moving
-        ChessPiece* movingPiece = board.getPiece(move.fromRow, move.fromCol);
-        ChessPiece* capturedPiece = board.getPiece(move.toRow, move.toCol);
+            for (const auto& move : possibleMoves) {
+                int toRow = move.first;
+                int toCol = move.second;
 
-        if (movingPiece == nullptr) continue;
+                // Save state
+                ChessPiece* capturedPiece = board.getPiece(toRow, toCol);
+                ChessPiece* movingPiece = board.getPiece(fromRow, fromCol);
 
-        board.setTurn(aiColor);
-        if (board.movePiece(move.fromRow, move.fromCol, move.toRow, move.toCol)) {
-            int score = minimax(board, MAX_DEPTH - 1, alpha, beta, false, aiColor);
-
-            // Undo the move
-            board.setTurn(aiColor);
-            board.restorePiece(move.fromRow, move.fromCol, movingPiece);
-            board.restorePiece(move.toRow, move.toCol, capturedPiece);
-
-            if (score > bestScore) {
-                bestScore = score;
-                bestMove = move;
-            }
-            alpha = std::max(alpha, score);
-        }
-
-        if (i % 5 == 0) {
-            vTaskDelay(1 / portTICK_PERIOD_MS);
-        }
-    }
-
-    if (bestScore > -CHECKMATE_SCORE && bestScore < -CHECKMATE_SCORE + 100) {
-        for (const auto& move : moves) {
-            board.setTurn(aiColor);
-            if (board.movePiece(move.fromRow, move.fromCol, move.toRow, move.toCol)) {
+                // Make move
                 board.setTurn(aiColor);
-                board.movePiece(move.toRow, move.toCol, move.fromRow, move.fromCol);
-                return move;
+                bool moveSuccess = board.movePiece(fromRow, fromCol, toRow, toCol);
+
+                if (!moveSuccess) {
+                    continue;
+                }
+
+                // Evaluate with minimax (opponent's turn next, so minimizing)
+                float score = minimax(board, depth - 1, alpha, beta, false, aiColor);
+
+                // Undo move
+                board.restorePiece(fromRow, fromCol, movingPiece);
+                if (capturedPiece != nullptr) {
+                    board.removeCapturedPiece(capturedPiece);
+                    board.restorePiece(toRow, toCol, capturedPiece);
+                } else {
+                    board.restorePiece(toRow, toCol, nullptr);
+                }
+                movingPiece->setPosition(fromRow, fromCol);
+
+                // Track best move
+                if (score > bestMove.score) {
+                    bestMove.fromRow = fromRow;
+                    bestMove.fromCol = fromCol;
+                    bestMove.toRow = toRow;
+                    bestMove.toCol = toCol;
+                    bestMove.score = score;
+                }
+
+                alpha = std::max(alpha, score);
             }
         }
     }
@@ -371,4 +320,4 @@ ChessAI::Move ChessAI::findBestMove(ChessBoard& board, Color aiColor) {
     return bestMove;
 }
 
-}
+} // namespace Student

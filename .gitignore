@@ -32,6 +32,9 @@ checkpoint_backup_working_capture_zones/
 *_checkpoint/
 CHECKPOINT_INFO.txt
 
+# Board state files
+Board_States/
+
 # Object files and binaries
 *.o
 *.obj

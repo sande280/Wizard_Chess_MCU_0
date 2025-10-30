@@ -38,6 +38,7 @@ namespace Student
         void createChessPiece(Color col, Type ty, int startRow, int startColumn);
         bool movePiece(int fromRow, int fromColumn, int toRow, int toColumn);
         void restorePiece(int row, int col, ChessPiece* piece);
+        void removeCapturedPiece(ChessPiece* piece);
         bool isValidMove(int fromRow, int fromColumn, int toRow, int toColumn);
         bool isValidMoveSimple(int fromRow, int fromColumn, int toRow, int toColumn);
         std::vector<std::pair<int, int>> getPossibleMoves(int fromRow, int fromColumn);
@@ -48,6 +49,8 @@ namespace Student
         std::ostringstream displayExpandedBoard();  // New method for 12x8 display
         float scoreBoard();
         float getHighestNextScore();
+        const std::vector<ChessPiece*>& getCapturedWhitePieces() const { return capturedWhitePieces; }
+        const std::vector<ChessPiece*>& getCapturedBlackPieces() const { return capturedBlackPieces; }
     };
 }
 

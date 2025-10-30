@@ -2,45 +2,46 @@
 #define CHESS_AI_HH
 
 #include "ChessBoard.hh"
-#include "ChessPiece.hh"
+#include "Chess.h"
+#include <utility>
 #include <vector>
-#include <limits>
 
 namespace Student {
 
-class ChessAI {
-public:
-    struct Move {
-        int fromRow, fromCol, toRow, toCol;
-        int score;
+struct AIMove {
+    int fromRow, fromCol, toRow, toCol;
+    float score;
 
-        Move() : fromRow(-1), fromCol(-1), toRow(-1), toCol(-1), score(0) {}
-        Move(int fr, int fc, int tr, int tc)
-            : fromRow(fr), fromCol(fc), toRow(tr), toCol(tc), score(0) {}
-    };
-
-    static constexpr int MAX_DEPTH = 2;  // 1 turn = 2 ply (minimal depth for ESP32)
-    static constexpr int INFINITY_SCORE = 1000000;
-    static constexpr int CHECKMATE_SCORE = 100000;
-
-    Move findBestMove(ChessBoard& board, Color aiColor);
-
-private:
-    int evaluateBoard(ChessBoard& board, Color maximizingColor);
-    int getPieceValue(Type pieceType);
-    int getPositionBonus(Type pieceType, int row, int col, Color color);
-
-    std::vector<Move> generateAllMoves(ChessBoard& board, Color color);
-    void orderMoves(std::vector<Move>& moves, ChessBoard& board);
-
-    int minimax(ChessBoard& board, int depth, int alpha, int beta,
-                bool isMaximizingPlayer, Color maximizingColor);
-
-    bool isGameOver(ChessBoard& board, Color currentPlayer);
-    bool isKingInCheck(ChessBoard& board, Color color);
-    bool hasValidMoves(ChessBoard& board, Color color);
+    AIMove() : fromRow(-1), fromCol(-1), toRow(-1), toCol(-1), score(-999999.0f) {}
 };
 
-}
+class ChessAI {
+public:
+    ChessAI();
 
-#endif
+    AIMove findBestMove(ChessBoard& board, Color aiColor, int depth);
+
+    int getNodesEvaluated() const { return nodesEvaluated; }
+
+private:
+    static const float PAWN_TABLE[8][8];
+    static const float KNIGHT_TABLE[8][8];
+    static const float BISHOP_TABLE[8][8];
+    static const float ROOK_TABLE[8][8];
+    static const float QUEEN_TABLE[8][8];
+    static const float KING_TABLE[8][8];
+
+    float evaluate(ChessBoard& board, Color perspective);
+
+    float getPieceValue(Type type);
+    float getPositionBonus(ChessPiece* piece, int row, int col);
+
+    float minimax(ChessBoard& board, int depth, float alpha, float beta,
+                  bool maximizing, Color perspective);
+
+    int nodesEvaluated;
+};
+
+} // namespace Student
+
+#endif // CHESS_AI_HH
