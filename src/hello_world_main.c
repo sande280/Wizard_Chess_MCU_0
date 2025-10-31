@@ -2,6 +2,8 @@
  * ESP32 Chess Game
  */
 
+ #if 0
+
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
@@ -397,3 +399,5 @@ void app_main(void) {
     vTaskDelay(5000 / portTICK_PERIOD_MS);
     esp_restart();
 }
+
+#endif

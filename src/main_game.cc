@@ -1,3 +1,5 @@
+#if 0
+
 #include <iostream>
 #include <string>
 #include <sstream>
@@ -303,3 +305,5 @@ int main() {
 
     return 0;
 }
+
+#endif
