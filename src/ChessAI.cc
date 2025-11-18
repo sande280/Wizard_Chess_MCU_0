@@ -185,9 +185,9 @@ float ChessAI::minimax(ChessBoard& board, int depth, float alpha, float beta,
             ChessPiece* capturedPiece = board.getPiece(toRow, toCol);
             ChessPiece* movingPiece = board.getPiece(fromRow, fromCol);
 
-            // Make move
+            // Make move (simulation - don't track captures)
             board.setTurn(currentPlayer);
-            bool moveSuccess = board.movePiece(fromRow, fromCol, toRow, toCol);
+            bool moveSuccess = board.movePiece(fromRow, fromCol, toRow, toCol, true);
 
             if (!moveSuccess) {
                 // Move failed (shouldn't happen with getPossibleMoves), skip
@@ -197,14 +197,9 @@ float ChessAI::minimax(ChessBoard& board, int depth, float alpha, float beta,
             // Recurse
             float eval = minimax(board, depth - 1, alpha, beta, false, perspective);
 
-            // Undo move
+            // Undo move (no need to remove from capture vectors since simulation didn't add)
             board.restorePiece(fromRow, fromCol, movingPiece);
-            if (capturedPiece != nullptr) {
-                board.removeCapturedPiece(capturedPiece);
-                board.restorePiece(toRow, toCol, capturedPiece);
-            } else {
-                board.restorePiece(toRow, toCol, nullptr);
-            }
+            board.restorePiece(toRow, toCol, capturedPiece);
             movingPiece->setPosition(fromRow, fromCol);
 
             maxEval = std::max(maxEval, eval);
@@ -228,9 +223,9 @@ float ChessAI::minimax(ChessBoard& board, int depth, float alpha, float beta,
             ChessPiece* capturedPiece = board.getPiece(toRow, toCol);
             ChessPiece* movingPiece = board.getPiece(fromRow, fromCol);
 
-            // Make move
+            // Make move (simulation - don't track captures)
             board.setTurn(currentPlayer);
-            bool moveSuccess = board.movePiece(fromRow, fromCol, toRow, toCol);
+            bool moveSuccess = board.movePiece(fromRow, fromCol, toRow, toCol, true);
 
             if (!moveSuccess) {
                 continue;
@@ -239,14 +234,9 @@ float ChessAI::minimax(ChessBoard& board, int depth, float alpha, float beta,
             // Recurse
             float eval = minimax(board, depth - 1, alpha, beta, true, perspective);
 
-            // Undo move
+            // Undo move (no need to remove from capture vectors since simulation didn't add)
             board.restorePiece(fromRow, fromCol, movingPiece);
-            if (capturedPiece != nullptr) {
-                board.removeCapturedPiece(capturedPiece);
-                board.restorePiece(toRow, toCol, capturedPiece);
-            } else {
-                board.restorePiece(toRow, toCol, nullptr);
-            }
+            board.restorePiece(toRow, toCol, capturedPiece);
             movingPiece->setPosition(fromRow, fromCol);
 
             minEval = std::min(minEval, eval);
@@ -282,9 +272,9 @@ AIMove ChessAI::findBestMove(ChessBoard& board, Color aiColor, int depth) {
                 ChessPiece* capturedPiece = board.getPiece(toRow, toCol);
                 ChessPiece* movingPiece = board.getPiece(fromRow, fromCol);
 
-                // Make move
+                // Make move (simulation - don't track captures)
                 board.setTurn(aiColor);
-                bool moveSuccess = board.movePiece(fromRow, fromCol, toRow, toCol);
+                bool moveSuccess = board.movePiece(fromRow, fromCol, toRow, toCol, true);
 
                 if (!moveSuccess) {
                     continue;
@@ -293,14 +283,9 @@ AIMove ChessAI::findBestMove(ChessBoard& board, Color aiColor, int depth) {
                 // Evaluate with minimax (opponent's turn next, so minimizing)
                 float score = minimax(board, depth - 1, alpha, beta, false, aiColor);
 
-                // Undo move
+                // Undo move (no need to remove from capture vectors since simulation didn't add)
                 board.restorePiece(fromRow, fromCol, movingPiece);
-                if (capturedPiece != nullptr) {
-                    board.removeCapturedPiece(capturedPiece);
-                    board.restorePiece(toRow, toCol, capturedPiece);
-                } else {
-                    board.restorePiece(toRow, toCol, nullptr);
-                }
+                board.restorePiece(toRow, toCol, capturedPiece);
                 movingPiece->setPosition(fromRow, fromCol);
 
                 // Track best move

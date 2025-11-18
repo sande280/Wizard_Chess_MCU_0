@@ -75,6 +75,8 @@ namespace Student
         // Remove from white captured pieces
         for (auto it = capturedWhitePieces.begin(); it != capturedWhitePieces.end(); ++it) {
             if (*it == piece) {
+                printf("DEBUG [removeCapturedPiece]: Removing WHITE piece %s (ptr=%p) from capturedWhitePieces. Size before: %d\n",
+                       piece->toString(), (void*)piece, (int)capturedWhitePieces.size());
                 capturedWhitePieces.erase(it);
                 return;
             }
@@ -83,10 +85,16 @@ namespace Student
         // Remove from black captured pieces
         for (auto it = capturedBlackPieces.begin(); it != capturedBlackPieces.end(); ++it) {
             if (*it == piece) {
+                printf("DEBUG [removeCapturedPiece]: Removing BLACK piece %s (ptr=%p) from capturedBlackPieces. Size before: %d\n",
+                       piece->toString(), (void*)piece, (int)capturedBlackPieces.size());
                 capturedBlackPieces.erase(it);
                 return;
             }
         }
+
+        // If we get here, the piece wasn't found in either list
+        printf("DEBUG [removeCapturedPiece]: WARNING - Piece %s (ptr=%p) NOT FOUND in either capture list!\n",
+               piece->toString(), (void*)piece);
     }
 
     void ChessBoard::createChessPiece(Color col, Type ty, int startRow, int startColumn)
@@ -384,7 +392,7 @@ namespace Student
         return possibleMoves;
     }
 
-    bool ChessBoard::movePiece(int fromRow, int fromColumn, int toRow, int toColumn)
+    bool ChessBoard::movePiece(int fromRow, int fromColumn, int toRow, int toColumn, bool isSimulation)
     {
         ChessPiece *pieceM = getPiece(fromRow, fromColumn);
         if(pieceM == nullptr) {
@@ -418,11 +426,16 @@ namespace Student
             {
                 victim = getPiece(toRow, toColumn);
                 if(victim != nullptr) {
-                    // Track captured piece instead of deleting
-                    if (victim->getColor() == White) {
-                        capturedWhitePieces.push_back(victim);
-                    } else {
-                        capturedBlackPieces.push_back(victim);
+                    // Track captured piece instead of deleting (only for real moves, not simulations)
+                    if (!isSimulation) {
+                        if (victim->getColor() == White) {
+                            capturedWhitePieces.push_back(victim);
+                        } else {
+                            capturedBlackPieces.push_back(victim);
+                        }
+                        printf("DEBUG [movePiece]: Captured %s piece at (%d,%d), ptr=%p. White captured: %d, Black captured: %d\n",
+                               victim->toString(), toRow, toColumn, (void*)victim,
+                               (int)capturedWhitePieces.size(), (int)capturedBlackPieces.size());
                     }
                 }
                 pieceM->setPosition(toRow, toColumn);
@@ -434,11 +447,16 @@ namespace Student
                 int rp=(pieceM->getColor()==White?(enPRow+1):(enPRow-1));
                 enPCap = getPiece(rp,enPCol);
                 if (enPCap!=nullptr) {
-                    // Track captured piece instead of deleting
-                    if (enPCap->getColor() == White) {
-                        capturedWhitePieces.push_back(enPCap);
-                    } else {
-                        capturedBlackPieces.push_back(enPCap);
+                    // Track captured piece instead of deleting (only for real moves, not simulations)
+                    if (!isSimulation) {
+                        if (enPCap->getColor() == White) {
+                            capturedWhitePieces.push_back(enPCap);
+                        } else {
+                            capturedBlackPieces.push_back(enPCap);
+                        }
+                        printf("DEBUG [movePiece En Passant]: Captured %s piece at (%d,%d), ptr=%p. White captured: %d, Black captured: %d\n",
+                               enPCap->toString(), rp, enPCol, (void*)enPCap,
+                               (int)capturedWhitePieces.size(), (int)capturedBlackPieces.size());
                     }
                 }
                 board[rp][enPCol]=nullptr;
@@ -450,11 +468,16 @@ namespace Student
             {
                 victim = getPiece(toRow,toColumn);
                 if(victim!=nullptr) {
-                    // Track captured piece instead of deleting (shouldn't happen in valid castling)
-                    if (victim->getColor() == White) {
-                        capturedWhitePieces.push_back(victim);
-                    } else {
-                        capturedBlackPieces.push_back(victim);
+                    // Track captured piece instead of deleting (shouldn't happen in valid castling, only for real moves, not simulations)
+                    if (!isSimulation) {
+                        if (victim->getColor() == White) {
+                            capturedWhitePieces.push_back(victim);
+                        } else {
+                            capturedBlackPieces.push_back(victim);
+                        }
+                        printf("DEBUG [movePiece Castling]: Captured %s piece at (%d,%d), ptr=%p. White captured: %d, Black captured: %d\n",
+                               victim->toString(), toRow, toColumn, (void*)victim,
+                               (int)capturedWhitePieces.size(), (int)capturedBlackPieces.size());
                     }
                 }
                 pieceM->setPosition(toRow,toColumn);
@@ -667,6 +690,9 @@ namespace Student
                 // Calculate which captured piece to show here
                 size_t capturedIndex = row * 2 + captureCol;
                 if (capturedIndex < capturedBlackPieces.size()) {
+                    printf("DEBUG [displayExpandedBoard]: Accessing BLACK captured[%zu] = %s (ptr=%p)\n",
+                           capturedIndex, capturedBlackPieces[capturedIndex]->toString(),
+                           (void*)capturedBlackPieces[capturedIndex]);
                     outputString << capturedBlackPieces[capturedIndex]->toString() << " ";
                 } else {
                     outputString << "  ";
@@ -689,6 +715,9 @@ namespace Student
                 // Calculate which captured piece to show here
                 size_t capturedIndex = row * 2 + captureCol;
                 if (capturedIndex < capturedWhitePieces.size()) {
+                    printf("DEBUG [displayExpandedBoard]: Accessing WHITE captured[%zu] = %s (ptr=%p)\n",
+                           capturedIndex, capturedWhitePieces[capturedIndex]->toString(),
+                           (void*)capturedWhitePieces[capturedIndex]);
                     outputString << capturedWhitePieces[capturedIndex]->toString() << " ";
                 } else {
                     outputString << "  ";
