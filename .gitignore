@@ -4,6 +4,7 @@
 .devcontainer
 .clangd
 
+#cleaned up
 # ESP-IDF build artifacts
 build/
 build/**
