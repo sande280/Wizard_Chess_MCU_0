@@ -42,6 +42,6 @@ private:
     int nodesEvaluated;
 };
 
-} // namespace Student
+}
 
-#endif // CHESS_AI_HH
+#endif

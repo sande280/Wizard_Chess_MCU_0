@@ -35,6 +35,6 @@ private:
     static bool isKnightLPathClear(int fromRow, int fromCol, int toRow, int toCol, ChessBoard& board);
 };
 
-} // namespace Student
+}
 
-#endif // PATH_ANALYZER_HH
+#endif

@@ -1,3 +1,5 @@
+#if 0
+
 #include <iostream>
 #include <string>
 #include <sstream>
@@ -42,13 +44,13 @@ void printHelp() {
 }
 
 void setupStandardBoard(ChessBoard& board) {
-    // Setup white pieces (bottom rows 6-7)
-    // Pawns
+
+
     for (int col = 0; col < 8; col++) {
         board.createChessPiece(White, Pawn, 6, col);
     }
 
-    // Back row
+
     board.createChessPiece(White, Rook, 7, 0);
     board.createChessPiece(White, Knight, 7, 1);
     board.createChessPiece(White, Bishop, 7, 2);
@@ -58,13 +60,13 @@ void setupStandardBoard(ChessBoard& board) {
     board.createChessPiece(White, Knight, 7, 6);
     board.createChessPiece(White, Rook, 7, 7);
 
-    // Setup black pieces (top rows 0-1)
-    // Pawns
+
+
     for (int col = 0; col < 8; col++) {
         board.createChessPiece(Black, Pawn, 1, col);
     }
 
-    // Back row
+
     board.createChessPiece(Black, Rook, 0, 0);
     board.createChessPiece(Black, Knight, 0, 1);
     board.createChessPiece(Black, Bishop, 0, 2);
@@ -80,7 +82,7 @@ string colorToString(Color c) {
 }
 
 bool isKingInCheck(ChessBoard& board, Color color) {
-    // Find the king
+
     int kingRow = -1, kingCol = -1;
     for (int r = 0; r < board.getNumRows(); r++) {
         for (int c = 0; c < board.getNumCols(); c++) {
@@ -94,10 +96,10 @@ bool isKingInCheck(ChessBoard& board, Color color) {
         if (kingRow != -1) break;
     }
 
-    if (kingRow == -1) return false; // No king found
+    if (kingRow == -1) return false;
 
-    // Check if king is under attack
-    // isPieceUnderThreat checks if any enemy piece can attack this position
+
+
     return board.isPieceUnderThreat(kingRow, kingCol);
 }
 
@@ -125,7 +127,7 @@ void makeAIMove(ChessBoard& board) {
     int bestFromRow = -1, bestFromCol = -1, bestToRow = -1, bestToCol = -1;
     int bestScore = -999999;
 
-    // Try all possible moves for Black
+
     for (int fromRow = 0; fromRow < board.getNumRows(); fromRow++) {
         for (int fromCol = 0; fromCol < board.getNumCols(); fromCol++) {
             ChessPiece* piece = board.getPiece(fromRow, fromCol);
@@ -134,10 +136,10 @@ void makeAIMove(ChessBoard& board) {
             for (int toRow = 0; toRow < board.getNumRows(); toRow++) {
                 for (int toCol = 0; toCol < board.getNumCols(); toCol++) {
                     if (board.isValidMove(fromRow, fromCol, toRow, toCol)) {
-                        // Evaluate this move
+
                         int score = 0;
 
-                        // Bonus for capturing pieces
+
                         ChessPiece* target = board.getPiece(toRow, toCol);
                         if (target) {
                             switch(target->getType()) {
@@ -150,14 +152,14 @@ void makeAIMove(ChessBoard& board) {
                             }
                         }
 
-                        // Bonus for center control
+
                         if (toRow >= 3 && toRow <= 4 && toCol >= 3 && toCol <= 4) {
                             score += 5;
                         }
 
-                        // Bonus for pawn advancement
+
                         if (piece->getType() == Pawn) {
-                            score += toRow; // Black pawns move down
+                            score += toRow;
                         }
 
                         if (score > bestScore) {
@@ -195,7 +197,7 @@ int main() {
     cout << board.displayBoard().str() << endl;
 
     while (gameRunning) {
-        // Check for check/checkmate
+
         bool inCheck = isKingInCheck(board, currentPlayer);
         bool hasValidMove = hasValidMoves(board, currentPlayer);
 
@@ -262,7 +264,7 @@ int main() {
             continue;
         }
 
-        // Parse move input
+
         istringstream iss(input);
         int fromRow, fromCol, toRow, toCol;
 
@@ -271,7 +273,7 @@ int main() {
             continue;
         }
 
-        // Validate piece belongs to current player
+
         ChessPiece* piece = board.getPiece(fromRow, fromCol);
         if (!piece) {
             cout << "No piece at position (" << fromRow << "," << fromCol << ")\n";
@@ -283,14 +285,14 @@ int main() {
             continue;
         }
 
-        // Try to make the move
+
         if (board.isValidMove(fromRow, fromCol, toRow, toCol)) {
             board.movePiece(fromRow, fromCol, toRow, toCol);
             currentPlayer = (currentPlayer == White) ? Black : White;
             clearScreen();
             cout << board.displayBoard().str() << endl;
 
-            // Optional: Auto-play AI for Black
+
             if (currentPlayer == Black) {
                 makeAIMove(board);
                 currentPlayer = White;
@@ -303,3 +305,5 @@ int main() {
 
     return 0;
 }
+
+#endif

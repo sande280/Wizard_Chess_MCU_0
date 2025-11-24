@@ -13,6 +13,10 @@
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "sdkconfig.h"
+#include <cmath>
+#include <cstring>
+#include "driver/ledc.h"
+#include "esp_timer.h"
 
 #include "Chess.h"
 #include "ChessBoard.hh"
@@ -21,6 +25,10 @@
 #include "BoardStates.hh"
 #include "PathAnalyzer.hh"
 #include "ChessAI.hh"
+
+#include "move_queue.h"
+#include "motionPos.h"
+#include <PinDefs.h>
 
 using namespace Student;
 using namespace std;
@@ -32,20 +40,35 @@ static const char *TAG = "ESP_CHESS";
 #define RD_BUF_SIZE (BUF_SIZE)
 
 
-//Bit sequences for pieces
-//000 or 111 = emtpy space
-//001 = Pawn
-//010 = Bishop
-//011 = Knight
-//100 = Rook
-//101 = Queen
-//110 = King
 
-//Bit sequences for color
-//0000 = Off
-//0001 = Red
-//1111 = White
 
+
+
+
+
+
+
+
+
+
+
+
+
+static esp_timer_handle_t step_timer = nullptr;
+
+typedef struct {
+    uint32_t total_A, total_B;
+    uint32_t sent_A, sent_B;
+    int dirA, dirB;
+    uint32_t leader_steps;
+    uint32_t follower_steps;
+    int leader_id;
+    float step_period_us;
+    int error_term;
+    bool active;
+} move_state_t;
+
+static move_state_t move_ctx{0};
 
 
 
@@ -55,6 +78,7 @@ bool hasValidMoves(ChessBoard& board, Color color);
 string colorToString(Color color);
 int translateColumn(int displayCol);
 void uart_printf(const char* format, ...);
+void uart_read_line(char* buffer, int max_len);
 void detectAndExecuteMove(ChessBoard& board, int row1, int col1, int row2, int col2, Color& currentPlayer);
 void makeAIMove(ChessBoard& board, Color& currentPlayer);
 void makeMinimaxMove(ChessBoard& board, Color& currentPlayer, int depth);
@@ -149,7 +173,7 @@ int translateColumn(int displayCol) {
     return displayCol - 2;
 }
 
-// Simple AI structure and function
+
 namespace Student {
     struct SimpleMove {
         int fromRow, fromCol, toRow, toCol;
@@ -159,6 +183,7 @@ namespace Student {
 }
 
 void makeAIMove(ChessBoard& board, Color& currentPlayer) {
+    char input[256];
     uart_printf("\r\nAI is thinking...\r\n");
 
     SimpleMove bestMove = findBestSimpleMove(board, currentPlayer);
@@ -179,21 +204,63 @@ void makeAIMove(ChessBoard& board, Color& currentPlayer) {
     board.setTurn(currentPlayer);
     if (board.movePiece(bestMove.fromRow, bestMove.fromCol, bestMove.toRow, bestMove.toCol)) {
         if (isCapture && aiPiece && targetPiece) {
+
             auto captureDestination = PathAnalyzer::findCaptureZoneDestination(board, targetPiece->getColor());
             PathType capturePath = PathAnalyzer::analyzeMovePath(bestMove.toRow, bestMove.toCol, captureDestination.first, captureDestination.second, board, targetPiece->getType(), false);
             PathType attackPath = PathAnalyzer::analyzeMovePath(bestMove.fromRow, bestMove.fromCol, bestMove.toRow, bestMove.toCol, board, aiPiece->getType(), false);
 
-            uart_printf("Captured piece path: %s from (%d,%d) to (%d,%d)\r\n",
+            uart_printf("\r\nCaptured piece path: %s from (%d,%d) to (%d,%d)\r\n",
                        PathAnalyzer::pathTypeToString(capturePath).c_str(),
                        bestMove.toRow, bestMove.toCol + 2, captureDestination.first, captureDestination.second + 2);
-            uart_printf("Attacking piece path: %s from (%d,%d) to (%d,%d)\r\n",
+
+
+            do {
+                uart_printf("Move captured piece to capture zone - Movement complete (y or n)? ");
+                uart_read_line(input, sizeof(input));
+            } while (strlen(input) == 0);
+
+            if (input[0] != 'y' && input[0] != 'Y') {
+                uart_printf("Move cancelled.\r\n");
+                board.setTurn(currentPlayer);
+                board.movePiece(bestMove.toRow, bestMove.toCol, bestMove.fromRow, bestMove.fromCol);
+                return;
+            }
+
+            uart_printf("\r\nAttacking piece path: %s from (%d,%d) to (%d,%d)\r\n",
                        PathAnalyzer::pathTypeToString(attackPath).c_str(),
                        bestMove.fromRow, bestMove.fromCol + 2, bestMove.toRow, bestMove.toCol + 2);
+
+
+            do {
+                uart_printf("Move attacking piece to destination - Movement complete (y or n)? ");
+                uart_read_line(input, sizeof(input));
+            } while (strlen(input) == 0);
+
+            if (input[0] != 'y' && input[0] != 'Y') {
+                uart_printf("Move cancelled.\r\n");
+                board.setTurn(currentPlayer);
+                board.movePiece(bestMove.toRow, bestMove.toCol, bestMove.fromRow, bestMove.fromCol);
+                return;
+            }
         } else if (aiPiece) {
+
             PathType movePath = PathAnalyzer::analyzeMovePath(bestMove.fromRow, bestMove.fromCol, bestMove.toRow, bestMove.toCol, board, aiPiece->getType(), false);
-            uart_printf("Movement path: %s from (%d,%d) to (%d,%d)\r\n",
+            uart_printf("\r\nMovement path: %s from (%d,%d) to (%d,%d)\r\n",
                        PathAnalyzer::pathTypeToString(movePath).c_str(),
                        bestMove.fromRow, bestMove.fromCol + 2, bestMove.toRow, bestMove.toCol + 2);
+
+
+            do {
+                uart_printf("Movement complete (y or n)? ");
+                uart_read_line(input, sizeof(input));
+            } while (strlen(input) == 0);
+
+            if (input[0] != 'y' && input[0] != 'Y') {
+                uart_printf("Move cancelled.\r\n");
+                board.setTurn(currentPlayer);
+                board.movePiece(bestMove.toRow, bestMove.toCol, bestMove.fromRow, bestMove.fromCol);
+                return;
+            }
         }
         currentPlayer = (currentPlayer == White) ? Black : White;
     } else {
@@ -202,6 +269,7 @@ void makeAIMove(ChessBoard& board, Color& currentPlayer) {
 }
 
 void makeMinimaxMove(ChessBoard& board, Color& currentPlayer, int depth) {
+    char input[256];
     uart_printf("\r\nMinimax AI thinking (depth %d)...\r\n", depth);
 
     ChessAI ai;
@@ -225,21 +293,63 @@ void makeMinimaxMove(ChessBoard& board, Color& currentPlayer, int depth) {
     board.setTurn(currentPlayer);
     if (board.movePiece(bestMove.fromRow, bestMove.fromCol, bestMove.toRow, bestMove.toCol)) {
         if (isCapture && aiPiece && targetPiece) {
+
             auto captureDestination = PathAnalyzer::findCaptureZoneDestination(board, targetPiece->getColor());
             PathType capturePath = PathAnalyzer::analyzeMovePath(bestMove.toRow, bestMove.toCol, captureDestination.first, captureDestination.second, board, targetPiece->getType(), false);
             PathType attackPath = PathAnalyzer::analyzeMovePath(bestMove.fromRow, bestMove.fromCol, bestMove.toRow, bestMove.toCol, board, aiPiece->getType(), false);
 
-            uart_printf("Captured piece path: %s from (%d,%d) to (%d,%d)\r\n",
+            uart_printf("\r\nCaptured piece path: %s from (%d,%d) to (%d,%d)\r\n",
                        PathAnalyzer::pathTypeToString(capturePath).c_str(),
                        bestMove.toRow, bestMove.toCol + 2, captureDestination.first, captureDestination.second + 2);
-            uart_printf("Attacking piece path: %s from (%d,%d) to (%d,%d)\r\n",
+
+
+            do {
+                uart_printf("Move captured piece to capture zone - Movement complete (y or n)? ");
+                uart_read_line(input, sizeof(input));
+            } while (strlen(input) == 0);
+
+            if (input[0] != 'y' && input[0] != 'Y') {
+                uart_printf("Move cancelled.\r\n");
+                board.setTurn(currentPlayer);
+                board.movePiece(bestMove.toRow, bestMove.toCol, bestMove.fromRow, bestMove.fromCol);
+                return;
+            }
+
+            uart_printf("\r\nAttacking piece path: %s from (%d,%d) to (%d,%d)\r\n",
                        PathAnalyzer::pathTypeToString(attackPath).c_str(),
                        bestMove.fromRow, bestMove.fromCol + 2, bestMove.toRow, bestMove.toCol + 2);
+
+
+            do {
+                uart_printf("Move attacking piece to destination - Movement complete (y or n)? ");
+                uart_read_line(input, sizeof(input));
+            } while (strlen(input) == 0);
+
+            if (input[0] != 'y' && input[0] != 'Y') {
+                uart_printf("Move cancelled.\r\n");
+                board.setTurn(currentPlayer);
+                board.movePiece(bestMove.toRow, bestMove.toCol, bestMove.fromRow, bestMove.fromCol);
+                return;
+            }
         } else if (aiPiece) {
+
             PathType movePath = PathAnalyzer::analyzeMovePath(bestMove.fromRow, bestMove.fromCol, bestMove.toRow, bestMove.toCol, board, aiPiece->getType(), false);
-            uart_printf("Movement path: %s from (%d,%d) to (%d,%d)\r\n",
+            uart_printf("\r\nMovement path: %s from (%d,%d) to (%d,%d)\r\n",
                        PathAnalyzer::pathTypeToString(movePath).c_str(),
                        bestMove.fromRow, bestMove.fromCol + 2, bestMove.toRow, bestMove.toCol + 2);
+
+
+            do {
+                uart_printf("Movement complete (y or n)? ");
+                uart_read_line(input, sizeof(input));
+            } while (strlen(input) == 0);
+
+            if (input[0] != 'y' && input[0] != 'Y') {
+                uart_printf("Move cancelled.\r\n");
+                board.setTurn(currentPlayer);
+                board.movePiece(bestMove.toRow, bestMove.toCol, bestMove.fromRow, bestMove.fromCol);
+                return;
+            }
         }
         currentPlayer = (currentPlayer == White) ? Black : White;
     } else {
@@ -543,8 +653,12 @@ void chess_game_task(void *pvParameter) {
         }
 
         uart_printf("\r\n%s's turn.\r\n", colorToString(currentPlayer).c_str());
-        uart_printf("Enter move: ");
-        uart_read_line(input, sizeof(input));
+
+
+        do {
+            uart_printf("Enter move: ");
+            uart_read_line(input, sizeof(input));
+        } while (strlen(input) == 0);
 
         if (strcmp(input, "quit") == 0) {
             uart_printf("Thanks for playing!\r\n");
@@ -778,8 +892,11 @@ void chess_game_task(void *pvParameter) {
                 uart_printf("  %d: (%d,%d)\r\n", (int)(i + 1), possibleMoves[i].first, possibleMoves[i].second + 2);
             }
 
-            uart_printf("\r\nEnter move number (1-%d) or 'cancel' to select different piece: ", (int)possibleMoves.size());
-            uart_read_line(input, sizeof(input));
+
+            do {
+                uart_printf("\r\nEnter move number (1-%d) or 'cancel' to select different piece: ", (int)possibleMoves.size());
+                uart_read_line(input, sizeof(input));
+            } while (strlen(input) == 0);
 
             if (strcmp(input, "cancel") == 0) {
                 continue;
@@ -795,20 +912,6 @@ void chess_game_task(void *pvParameter) {
             int toCol = possibleMoves[moveChoice - 1].second;
 
             ChessPiece* targetPiece = board.getPiece(toRow, toCol);
-            if (targetPiece != nullptr) {
-                uart_printf("\r\nMOVING CAPTURED PIECE\r\n");
-
-                uart_printf("\r\nMovement complete (y or n)? ");
-                uart_read_line(input, sizeof(input));
-
-                if (input[0] != 'y' && input[0] != 'Y') {
-                    uart_printf("Capture cancelled.\r\n");
-                    continue;
-                }
-
-                uart_printf("Executing capture...\r\n");
-            }
-
             ChessPiece* movingPiece = board.getPiece(fromRow, fromCol);
             board.setTurn(currentPlayer);
 
@@ -821,21 +924,63 @@ void chess_game_task(void *pvParameter) {
                 }
 
                 if (targetPiece != nullptr && movingPiece) {
+
                     auto captureDestination = PathAnalyzer::findCaptureZoneDestination(board, targetPiece->getColor());
                     PathType capturePath = PathAnalyzer::analyzeMovePath(toRow, toCol, captureDestination.first, captureDestination.second, board, targetPiece->getType(), false);
                     PathType attackPath = PathAnalyzer::analyzeMovePath(fromRow, fromCol, toRow, toCol, board, movingPiece->getType(), false);
 
-                    uart_printf("Captured piece path: %s from (%d,%d) to (%d,%d)\r\n",
+                    uart_printf("\r\nCaptured piece path: %s from (%d,%d) to (%d,%d)\r\n",
                                PathAnalyzer::pathTypeToString(capturePath).c_str(),
                                toRow, toCol + 2, captureDestination.first, captureDestination.second + 2);
-                    uart_printf("Attacking piece path: %s from (%d,%d) to (%d,%d)\r\n",
+
+
+                    do {
+                        uart_printf("Move captured piece to capture zone - Movement complete (y or n)? ");
+                        uart_read_line(input, sizeof(input));
+                    } while (strlen(input) == 0);
+
+                    if (input[0] != 'y' && input[0] != 'Y') {
+                        uart_printf("Move cancelled.\r\n");
+                        board.setTurn(currentPlayer);
+                        board.movePiece(toRow, toCol, fromRow, fromCol);
+                        continue;
+                    }
+
+                    uart_printf("\r\nAttacking piece path: %s from (%d,%d) to (%d,%d)\r\n",
                                PathAnalyzer::pathTypeToString(attackPath).c_str(),
                                fromRow, fromCol + 2, toRow, toCol + 2);
+
+
+                    do {
+                        uart_printf("Move attacking piece to destination - Movement complete (y or n)? ");
+                        uart_read_line(input, sizeof(input));
+                    } while (strlen(input) == 0);
+
+                    if (input[0] != 'y' && input[0] != 'Y') {
+                        uart_printf("Move cancelled.\r\n");
+                        board.setTurn(currentPlayer);
+                        board.movePiece(toRow, toCol, fromRow, fromCol);
+                        continue;
+                    }
                 } else if (movingPiece) {
+
                     PathType movePath = PathAnalyzer::analyzeMovePath(fromRow, fromCol, toRow, toCol, board, movingPiece->getType(), false);
-                    uart_printf("Movement path: %s from (%d,%d) to (%d,%d)\r\n",
+                    uart_printf("\r\nMovement path: %s from (%d,%d) to (%d,%d)\r\n",
                                PathAnalyzer::pathTypeToString(movePath).c_str(),
                                fromRow, fromCol + 2, toRow, toCol + 2);
+
+
+                    do {
+                        uart_printf("Movement complete (y or n)? ");
+                        uart_read_line(input, sizeof(input));
+                    } while (strlen(input) == 0);
+
+                    if (input[0] != 'y' && input[0] != 'Y') {
+                        uart_printf("Move cancelled.\r\n");
+                        board.setTurn(currentPlayer);
+                        board.movePiece(toRow, toCol, fromRow, fromCol);
+                        continue;
+                    }
                 }
 
                 currentPlayer = (currentPlayer == White) ? Black : White;
@@ -875,20 +1020,6 @@ void chess_game_task(void *pvParameter) {
             }
 
             ChessPiece* targetPiece = board.getPiece(toRow, toCol);
-            if (targetPiece != nullptr) {
-                uart_printf("\r\nMOVING CAPTURED PIECE\r\n");
-
-                uart_printf("\r\nMovement complete (y or n)? ");
-                uart_read_line(input, sizeof(input));
-
-                if (input[0] != 'y' && input[0] != 'Y') {
-                    uart_printf("Capture cancelled.\r\n");
-                    continue;
-                }
-
-                uart_printf("Executing capture...\r\n");
-            }
-
             board.setTurn(currentPlayer);
 
             if (board.movePiece(fromRow, fromCol, toRow, toCol)) {
@@ -900,21 +1031,63 @@ void chess_game_task(void *pvParameter) {
                 }
 
                 if (targetPiece != nullptr && piece) {
+
                     auto captureDestination = PathAnalyzer::findCaptureZoneDestination(board, targetPiece->getColor());
                     PathType capturePath = PathAnalyzer::analyzeMovePath(toRow, toCol, captureDestination.first, captureDestination.second, board, targetPiece->getType(), false);
                     PathType attackPath = PathAnalyzer::analyzeMovePath(fromRow, fromCol, toRow, toCol, board, piece->getType(), false);
 
-                    uart_printf("Captured piece path: %s from (%d,%d) to (%d,%d)\r\n",
+                    uart_printf("\r\nCaptured piece path: %s from (%d,%d) to (%d,%d)\r\n",
                                PathAnalyzer::pathTypeToString(capturePath).c_str(),
                                toRow, toCol + 2, captureDestination.first, captureDestination.second + 2);
-                    uart_printf("Attacking piece path: %s from (%d,%d) to (%d,%d)\r\n",
+
+
+                    do {
+                        uart_printf("Move captured piece to capture zone - Movement complete (y or n)? ");
+                        uart_read_line(input, sizeof(input));
+                    } while (strlen(input) == 0);
+
+                    if (input[0] != 'y' && input[0] != 'Y') {
+                        uart_printf("Move cancelled.\r\n");
+                        board.setTurn(currentPlayer);
+                        board.movePiece(toRow, toCol, fromRow, fromCol);
+                        continue;
+                    }
+
+                    uart_printf("\r\nAttacking piece path: %s from (%d,%d) to (%d,%d)\r\n",
                                PathAnalyzer::pathTypeToString(attackPath).c_str(),
                                fromRow, fromCol + 2, toRow, toCol + 2);
+
+
+                    do {
+                        uart_printf("Move attacking piece to destination - Movement complete (y or n)? ");
+                        uart_read_line(input, sizeof(input));
+                    } while (strlen(input) == 0);
+
+                    if (input[0] != 'y' && input[0] != 'Y') {
+                        uart_printf("Move cancelled.\r\n");
+                        board.setTurn(currentPlayer);
+                        board.movePiece(toRow, toCol, fromRow, fromCol);
+                        continue;
+                    }
                 } else if (piece) {
+
                     PathType movePath = PathAnalyzer::analyzeMovePath(fromRow, fromCol, toRow, toCol, board, piece->getType(), false);
-                    uart_printf("Movement path: %s from (%d,%d) to (%d,%d)\r\n",
+                    uart_printf("\r\nMovement path: %s from (%d,%d) to (%d,%d)\r\n",
                                PathAnalyzer::pathTypeToString(movePath).c_str(),
                                fromRow, fromCol + 2, toRow, toCol + 2);
+
+
+                    do {
+                        uart_printf("Movement complete (y or n)? ");
+                        uart_read_line(input, sizeof(input));
+                    } while (strlen(input) == 0);
+
+                    if (input[0] != 'y' && input[0] != 'Y') {
+                        uart_printf("Move cancelled.\r\n");
+                        board.setTurn(currentPlayer);
+                        board.movePiece(toRow, toCol, fromRow, fromCol);
+                        continue;
+                    }
                 }
 
                 currentPlayer = (currentPlayer == White) ? Black : White;
@@ -936,6 +1109,147 @@ void chess_game_task(void *pvParameter) {
     esp_restart();
 }
 
+
+inline void pulse_step(gpio_num_t pin) {
+    gpio_set_level(pin, 1);
+    uint64_t t0 = esp_timer_get_time();
+    while (esp_timer_get_time() - t0 < 2) { }
+    gpio_set_level(pin, 0);
+}
+
+static void IRAM_ATTR step_timer_cb(void* arg) {
+    if (!move_ctx.active) return;
+
+    if (move_ctx.leader_id == 1) {
+        if (move_ctx.sent_A < move_ctx.total_A) {
+            pulse_step(STEP1_PIN);
+            motors.A_pos += (move_ctx.dirA > 0 ? 1 : -1);
+            move_ctx.sent_A++;
+            move_ctx.error_term += move_ctx.follower_steps;
+            if (move_ctx.error_term >= (int)move_ctx.leader_steps) {
+                move_ctx.error_term -= move_ctx.leader_steps;
+                if (move_ctx.sent_B < move_ctx.total_B) {
+                    pulse_step(STEP2_PIN);
+                    motors.B_pos += (move_ctx.dirB > 0 ? 1 : -1);
+                    move_ctx.sent_B++;
+                }
+            }
+        }
+    } else {
+        if (move_ctx.sent_B < move_ctx.total_B) {
+            pulse_step(STEP2_PIN);
+            motors.B_pos += (move_ctx.dirB > 0 ? 1 : -1);
+            move_ctx.sent_B++;
+            move_ctx.error_term += move_ctx.follower_steps;
+            if (move_ctx.error_term >= (int)move_ctx.leader_steps) {
+                move_ctx.error_term -= move_ctx.leader_steps;
+                if (move_ctx.sent_A < move_ctx.total_A) {
+                    pulse_step(STEP1_PIN);
+                    motors.A_pos += (move_ctx.dirA > 0 ? 1 : -1);
+                    move_ctx.sent_A++;
+                }
+            }
+        }
+    }
+
+
+    if (move_ctx.sent_A >= move_ctx.total_A && move_ctx.sent_B >= move_ctx.total_B) {
+        move_ctx.active = false;
+        esp_timer_stop(step_timer);
+        gantry.motion_active = false;
+        gantry.position_reached = true;
+    }
+
+
+    gantry.x = (motors.A_pos + motors.B_pos) / (2.0f * STEPS_PER_MM);
+    gantry.y = (motors.A_pos - motors.B_pos) / (2.0f * STEPS_PER_MM);
+
+}
+
+void gpio_output_init(gpio_num_t pin) {
+    gpio_config_t cfg = {
+        .pin_bit_mask = (1ULL << pin),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    gpio_config(&cfg);
+}
+
+
+bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, bool magnet_on) {
+
+    if (speed_mm_s <= 0.0f) return false;
+
+    gpio_set_level(MAGNET_PIN, magnet_on);
+
+    float dx = x_target_mm - gantry.x;
+    float dy = y_target_mm - gantry.y;
+    float distance = sqrtf(dx*dx + dy*dy);
+    if (distance <= 0.0f) return false;
+
+    float time_s = distance / speed_mm_s;
+
+    long newA = lroundf((x_target_mm + y_target_mm) * STEPS_PER_MM);
+    long newB = lroundf((x_target_mm - y_target_mm) * STEPS_PER_MM);
+    long deltaA = newA - motors.A_pos;
+    long deltaB = newB - motors.B_pos;
+
+    move_ctx.dirA = (deltaA >= 0) ? 1 : -1;
+    move_ctx.dirB = (deltaB >= 0) ? 1 : -1;
+
+    move_ctx.total_A = abs(deltaA);
+    move_ctx.total_B = abs(deltaB);
+    move_ctx.sent_A = move_ctx.sent_B = 0;
+    move_ctx.error_term = 0;
+
+
+    gpio_set_level(DIR1_PIN, move_ctx.dirA > 0 ? 1 : 0);
+    gpio_set_level(DIR2_PIN, move_ctx.dirB > 0 ? 1 : 0);
+
+
+    if (move_ctx.total_A >= move_ctx.total_B) {
+        move_ctx.leader_id = 1;
+        move_ctx.leader_steps = move_ctx.total_A;
+        move_ctx.follower_steps = move_ctx.total_B;
+    } else {
+        move_ctx.leader_id = 2;
+        move_ctx.leader_steps = move_ctx.total_B;
+        move_ctx.follower_steps = move_ctx.total_A;
+    }
+
+
+    float freq = move_ctx.leader_steps / time_s;
+    move_ctx.step_period_us = 1e6 / freq;
+
+    move_ctx.active = true;
+    gantry.motion_active = true;
+    gantry.position_reached = false;
+
+    gantry.x_target = x_target_mm;
+    gantry.y_target = y_target_mm;
+    motors.A_target = newA;
+    motors.B_target = newB;
+
+    if (!step_timer) {
+        esp_timer_create_args_t args = {
+            .callback = &step_timer_cb,
+            .arg = NULL,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "step_timer",
+            .skip_unhandled_events = false
+        };
+        esp_timer_create(&args, &step_timer);
+    }
+
+    esp_timer_start_periodic(step_timer, (uint64_t)move_ctx.step_period_us);
+
+    ESP_LOGI("MOVE", "Straight move: freq=%.1f Hz, period=%.1f us, A=%lu B=%lu", freq, move_ctx.step_period_us, move_ctx.total_A, move_ctx.total_B);
+    return true;
+}
+
+
 extern "C" {
     void app_main(void);
 }
@@ -943,8 +1257,30 @@ extern "C" {
 void app_main(void) {
     ESP_LOGI(TAG, "Starting ESP32 Chess Game");
 
+    gpio_output_init(STEP1_PIN);
+    gpio_output_init(STEP2_PIN);
+    gpio_output_init(DIR1_PIN);
+    gpio_output_init(DIR2_PIN);
+    gpio_output_init(SLEEP_PIN);
+    gpio_output_init(EN_PIN);
+    gpio_output_init(HFS_PIN);
+    gpio_output_init(MODE0_PIN);
+    gpio_output_init(MODE1_PIN);
+    gpio_output_init(MODE2_PIN);
+
+    gpio_set_level(SLEEP_PIN, 1);
+    gpio_set_level(EN_PIN, 1);
+    gpio_set_level(HFS_PIN, 1);
+    gpio_set_level(MODE0_PIN, 0);
+    gpio_set_level(MODE1_PIN, 0);
+    gpio_set_level(MODE2_PIN, 1);
+
+    setupMotion();
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    ESP_LOGI("INIT", "Hardware Startup done");
+
     uart_config_t uart_config = {};
-    uart_config.baud_rate = 115200;
+    uart_config.baud_rate = 9600;
     uart_config.data_bits = UART_DATA_8_BITS;
     uart_config.parity = UART_PARITY_DISABLE;
     uart_config.stop_bits = UART_STOP_BITS_1;
@@ -958,4 +1294,15 @@ void app_main(void) {
                                   UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
     xTaskCreate(chess_game_task, "chess_game", 8192, NULL, 10, NULL);
+
+
+
+
+
+
+
+
+
+
+
 }

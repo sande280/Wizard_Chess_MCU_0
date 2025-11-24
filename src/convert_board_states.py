@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 import os
 import re
 import sys
@@ -11,15 +11,15 @@ def parse_board_state_file(filepath):
         with open(filepath, 'r') as f:
             lines = f.readlines()
 
-        # Parse lines 3-10 (indices 2-9) which contain rows 0-7
+
         for i in range(8):
             if i + 2 >= len(lines):
                 print(f"Warning: {filepath} has insufficient lines", file=sys.stderr)
                 return None
 
-            line = lines[i + 2]  # Skip header lines
+            line = lines[i + 2]
 
-            # Find the content between | |
+
             match = re.search(r'\d\|(.*)\|', line)
             if not match:
                 print(f"Warning: Could not parse line {i+2} in {filepath}", file=sys.stderr)
@@ -27,11 +27,11 @@ def parse_board_state_file(filepath):
 
             content = match.group(1)
 
-            # Columns 2-9 in display are positions 4-19 in content string (0-indexed)
-            # Each column takes 2 characters in the display
-            # Column layout: "    " (4 spaces for cols 0-1) + content for cols 2-9 + "    " (4 spaces for cols A-B)
+
+
+
             for col in range(8):
-                # Column 2 starts at position 4, each column is 2 chars wide
+
                 char_pos = 4 + (col * 2)
                 if char_pos < len(content):
                     if content[char_pos] == 'x':
@@ -58,7 +58,7 @@ def find_board_state_files(board_states_dir):
             filepath = os.path.join(board_states_dir, filename)
             files.append((number, filepath))
 
-    # Sort by state number
+
     files.sort(key=lambda x: x[0])
     return files
 
@@ -72,10 +72,10 @@ def generate_header_file(board_states, output_path):
         f.write("#define BOARD_STATES_HH\n\n")
         f.write("namespace Student {\n\n")
 
-        # Write number of states
+
         f.write(f"const int NUM_BOARD_STATES = {len(board_states)};\n\n")
 
-        # Write board states array
+
         f.write("const bool BOARD_STATES[NUM_BOARD_STATES][8][8] = {\n")
 
         for state_idx, (state_num, occupied) in enumerate(board_states):
@@ -101,7 +101,7 @@ def generate_header_file(board_states, output_path):
         f.write("#endif // BOARD_STATES_HH\n")
 
 def main():
-    # Determine paths
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(script_dir)
     board_states_dir = os.path.join(project_root, "Board_States")
@@ -109,12 +109,12 @@ def main():
 
     print(f"Scanning for board state files in: {board_states_dir}")
 
-    # Find all board state files
+
     state_files = find_board_state_files(board_states_dir)
 
     if not state_files:
         print("Warning: No Board_State_#.txt files found", file=sys.stderr)
-        # Generate empty header
+
         with open(output_path, 'w') as f:
             f.write("// Auto-generated file - no board states found\n")
             f.write("#ifndef BOARD_STATES_HH\n")
@@ -128,7 +128,7 @@ def main():
 
     print(f"Found {len(state_files)} board state files")
 
-    # Parse all files
+
     board_states = []
     for state_num, filepath in state_files:
         occupied = parse_board_state_file(filepath)
@@ -142,7 +142,7 @@ def main():
         print("Error: No valid board states parsed", file=sys.stderr)
         return 1
 
-    # Generate header file
+
     generate_header_file(board_states, output_path)
     print(f"Generated {output_path} with {len(board_states)} states")
 

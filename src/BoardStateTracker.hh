@@ -33,6 +33,6 @@ private:
     Color getPieceColorFromStartingPosition(int row, int col);
 };
 
-} // namespace Student
+}
 
-#endif // BOARD_STATE_TRACKER_HH
+#endif

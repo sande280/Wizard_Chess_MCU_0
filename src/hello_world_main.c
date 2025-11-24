@@ -1,6 +1,6 @@
-/*
- * ESP32 Chess Game
- */
+
+
+ #if 0
 
 #include <stdio.h>
 #include <string.h>
@@ -10,7 +10,7 @@
 #include "freertos/task.h"
 #include "esp_system.h"
 
-// Chess piece types
+
 typedef enum {
     EMPTY = 0,
     PAWN,
@@ -21,26 +21,26 @@ typedef enum {
     KING
 } PieceType;
 
-// Chess colors
+
 typedef enum {
     NONE = 0,
     WHITE,
     BLACK
 } Color;
 
-// Chess piece structure
+
 typedef struct {
     PieceType type;
     Color color;
 } ChessPiece;
 
-// Chess board
+
 ChessPiece board[8][8];
 Color currentTurn = WHITE;
 
-// Initialize the chess board
+
 void initBoard() {
-    // Clear the board
+
     for (int i = 0; i < 8; i++) {
         for (int j = 0; j < 8; j++) {
             board[i][j].type = EMPTY;
@@ -48,8 +48,8 @@ void initBoard() {
         }
     }
 
-    // Set up black pieces (rows 0-1)
-    // Back row
+
+
     board[0][0] = (ChessPiece){ROOK, BLACK};
     board[0][1] = (ChessPiece){KNIGHT, BLACK};
     board[0][2] = (ChessPiece){BISHOP, BLACK};
@@ -59,18 +59,18 @@ void initBoard() {
     board[0][6] = (ChessPiece){KNIGHT, BLACK};
     board[0][7] = (ChessPiece){ROOK, BLACK};
 
-    // Pawns
+
     for (int j = 0; j < 8; j++) {
         board[1][j] = (ChessPiece){PAWN, BLACK};
     }
 
-    // Set up white pieces (rows 6-7)
-    // Pawns
+
+
     for (int j = 0; j < 8; j++) {
         board[6][j] = (ChessPiece){PAWN, WHITE};
     }
 
-    // Back row
+
     board[7][0] = (ChessPiece){ROOK, WHITE};
     board[7][1] = (ChessPiece){KNIGHT, WHITE};
     board[7][2] = (ChessPiece){BISHOP, WHITE};
@@ -81,7 +81,7 @@ void initBoard() {
     board[7][7] = (ChessPiece){ROOK, WHITE};
 }
 
-// Get character representation of a piece
+
 char getPieceChar(ChessPiece piece) {
     char c = ' ';
     switch (piece.type) {
@@ -94,7 +94,7 @@ char getPieceChar(ChessPiece piece) {
         default:     return ' ';
     }
 
-    // Uppercase for white pieces
+
     if (piece.color == WHITE) {
         c = toupper(c);
     }
@@ -102,7 +102,7 @@ char getPieceChar(ChessPiece piece) {
     return c;
 }
 
-// Display the board
+
 void displayBoard() {
     printf("\n  01234567\n");
     printf("  --------\n");
@@ -116,12 +116,12 @@ void displayBoard() {
     printf("  --------\n\n");
 }
 
-// Check if a position is on the board
+
 int isValidPosition(int row, int col) {
     return row >= 0 && row < 8 && col >= 0 && col < 8;
 }
 
-// Check if a path is clear (for rook, bishop, queen)
+
 int isPathClear(int r1, int c1, int r2, int c2) {
     int dr = (r2 > r1) ? 1 : ((r2 < r1) ? -1 : 0);
     int dc = (c2 > c1) ? 1 : ((c2 < c1) ? -1 : 0);
@@ -140,25 +140,25 @@ int isPathClear(int r1, int c1, int r2, int c2) {
     return 1;
 }
 
-// Validate pawn move
+
 int isValidPawnMove(int r1, int c1, int r2, int c2, Color color) {
     int direction = (color == WHITE) ? -1 : 1;
     int startRow = (color == WHITE) ? 6 : 1;
 
-    // Forward move
+
     if (c1 == c2) {
-        // One square forward
+
         if (r2 == r1 + direction && board[r2][c2].type == EMPTY) {
             return 1;
         }
-        // Two squares forward from starting position
+
         if (r1 == startRow && r2 == r1 + 2 * direction &&
             board[r1 + direction][c1].type == EMPTY &&
             board[r2][c2].type == EMPTY) {
             return 1;
         }
     }
-    // Diagonal capture
+
     else if (abs(c2 - c1) == 1 && r2 == r1 + direction) {
         if (board[r2][c2].type != EMPTY && board[r2][c2].color != color) {
             return 1;
@@ -168,48 +168,48 @@ int isValidPawnMove(int r1, int c1, int r2, int c2, Color color) {
     return 0;
 }
 
-// Validate rook move
+
 int isValidRookMove(int r1, int c1, int r2, int c2) {
     if (r1 != r2 && c1 != c2) {
-        return 0;  // Rook must move in straight line
+        return 0;
     }
     return isPathClear(r1, c1, r2, c2);
 }
 
-// Validate bishop move
+
 int isValidBishopMove(int r1, int c1, int r2, int c2) {
     if (abs(r2 - r1) != abs(c2 - c1)) {
-        return 0;  // Bishop must move diagonally
+        return 0;
     }
     return isPathClear(r1, c1, r2, c2);
 }
 
-// Validate knight move
+
 int isValidKnightMove(int r1, int c1, int r2, int c2) {
     int dr = abs(r2 - r1);
     int dc = abs(c2 - c1);
     return (dr == 2 && dc == 1) || (dr == 1 && dc == 2);
 }
 
-// Validate queen move
+
 int isValidQueenMove(int r1, int c1, int r2, int c2) {
     return isValidRookMove(r1, c1, r2, c2) || isValidBishopMove(r1, c1, r2, c2);
 }
 
-// Validate king move
+
 int isValidKingMove(int r1, int c1, int r2, int c2) {
     return abs(r2 - r1) <= 1 && abs(c2 - c1) <= 1;
 }
 
-// Validate a move
+
 int isValidMove(int r1, int c1, int r2, int c2) {
-    // Check if positions are valid
+
     if (!isValidPosition(r1, c1) || !isValidPosition(r2, c2)) {
         printf("Position out of bounds!\n");
         return 0;
     }
 
-    // Can't move to same position
+
     if (r1 == r2 && c1 == c2) {
         printf("Can't move to same position!\n");
         return 0;
@@ -218,25 +218,25 @@ int isValidMove(int r1, int c1, int r2, int c2) {
     ChessPiece piece = board[r1][c1];
     ChessPiece target = board[r2][c2];
 
-    // Check if there's a piece to move
+
     if (piece.type == EMPTY) {
         printf("No piece at source position!\n");
         return 0;
     }
 
-    // Check if it's the right color's turn
+
     if (piece.color != currentTurn) {
         printf("It's %s's turn!\n", currentTurn == WHITE ? "White" : "Black");
         return 0;
     }
 
-    // Can't capture own piece
+
     if (target.type != EMPTY && target.color == piece.color) {
         printf("Can't capture your own piece!\n");
         return 0;
     }
 
-    // Check piece-specific moves
+
     int valid = 0;
     switch (piece.type) {
         case PAWN:
@@ -274,17 +274,17 @@ int isValidMove(int r1, int c1, int r2, int c2) {
     return valid;
 }
 
-// Make a move
+
 void makeMove(int r1, int c1, int r2, int c2) {
     board[r2][c2] = board[r1][c1];
     board[r1][c1].type = EMPTY;
     board[r1][c1].color = NONE;
 
-    // Switch turns
+
     currentTurn = (currentTurn == WHITE) ? BLACK : WHITE;
 }
 
-// Read a line from UART
+
 int readLine(char *buffer, int maxLen) {
     int pos = 0;
     while (pos < maxLen - 1) {
@@ -300,13 +300,13 @@ int readLine(char *buffer, int maxLen) {
                 printf("\n");
                 return pos;
             }
-        } else if (c == 127 || c == '\b') {  // Backspace
+        } else if (c == 127 || c == '\b') {
             if (pos > 0) {
                 pos--;
                 printf("\b \b");
                 fflush(stdout);
             }
-        } else if (c >= 32 && c < 127) {  // Printable characters
+        } else if (c >= 32 && c < 127) {
             buffer[pos++] = c;
             putchar(c);
             fflush(stdout);
@@ -316,7 +316,7 @@ int readLine(char *buffer, int maxLen) {
     return pos;
 }
 
-// Main game loop
+
 void chessGame() {
     char input[100];
     int r1, c1, r2, c2;
@@ -344,7 +344,7 @@ void chessGame() {
             continue;
         }
 
-        // Check for commands
+
         if (strcmp(input, "quit") == 0) {
             printf("Thanks for playing!\n");
             break;
@@ -369,13 +369,13 @@ void chessGame() {
             continue;
         }
 
-        // Parse move
+
         if (sscanf(input, "%d %d %d %d", &r1, &c1, &r2, &c2) != 4) {
             printf("Invalid input format! Use: row1 col1 row2 col2\n");
             continue;
         }
 
-        // Validate and make move
+
         if (isValidMove(r1, c1, r2, c2)) {
             printf("Moving piece from (%d,%d) to (%d,%d)\n", r1, c1, r2, c2);
             makeMove(r1, c1, r2, c2);
@@ -387,13 +387,15 @@ void chessGame() {
 }
 
 void app_main(void) {
-    // Small delay to let serial monitor connect
+
     vTaskDelay(2000 / portTICK_PERIOD_MS);
 
     chessGame();
 
-    // Restart after game ends
+
     printf("Restarting in 5 seconds...\n");
     vTaskDelay(5000 / portTICK_PERIOD_MS);
     esp_restart();
 }
+
+#endif

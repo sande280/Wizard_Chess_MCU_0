@@ -18,6 +18,10 @@ sdkconfig.defaults.esp32
 test_expanded_board.cc
 debug_board.cc
 calculate_board_size.cc
+src/hello_world_main.c
+
+# Non-minimax AI (not used)
+SimpleAI.cc
 
 # Compiled test/debug executables
 debug_board
@@ -57,6 +61,12 @@ core
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Unused Python scripts
+position_lookup_generator.py
+pytest_hello_world.py
+add_compile_commands.py
+src/convert_board_states.py
 
 # IDE specific files
 .idea/
