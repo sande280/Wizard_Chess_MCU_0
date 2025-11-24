@@ -299,4 +299,4 @@ bool BoardStateTracker::processNextState(ChessBoard& board, bool prevOccupied[8]
     }
 }
 
-} // namespace Student
+}

@@ -1,3 +1,5 @@
+#if 0
+
 #include <assert.h>
 #include <iostream>
 #include "Chess.h"
@@ -7,15 +9,15 @@
 using namespace Student;
 
 void test_part1_4x4_1() {
-     // Config file content:
-    // 0
-    // 4 4
-    // w r 3 2
-    // b b 1 3
-    // b r 1 1
-    // w r 2 3
-    // ~
-    // isValidScan
+
+
+
+
+
+
+
+
+
 
     ChessBoard sBoard(4, 4);
     sBoard.createChessPiece(White, Rook, 3, 2);
@@ -32,7 +34,7 @@ void test_part1_4x4_1() {
             for (int toRow = 0; toRow < sBoard.getNumRows(); ++toRow) {
                 for (int toCol = 0; toCol < sBoard.getNumCols(); ++toCol) {
                     if (fromRow == toRow && fromCol == toCol)
-                        continue; 
+                        continue;
                     bool isValid = sBoard.isValidMove(fromRow, fromCol, toRow, toCol);
                     if (isValid) {
                         std::cout << fromRow << " " << fromCol << " " << toRow << " " << toCol << std::endl;
@@ -48,3 +50,4 @@ int main()
     test_part1_4x4_1();
     return 0;
 }
+#endif

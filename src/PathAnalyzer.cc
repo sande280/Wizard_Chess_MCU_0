@@ -171,4 +171,4 @@ std::pair<int, int> PathAnalyzer::findCaptureZoneDestination(ChessBoard& board, 
     return std::make_pair(row, col);
 }
 
-} // namespace Student
+}

@@ -1,5 +1,5 @@
-# SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
-# SPDX-License-Identifier: CC0-1.0
+
+
 import hashlib
 import logging
 from typing import Callable
@@ -40,7 +40,7 @@ def verify_elf_sha256_embedding(app: QemuApp, sha256_reported: str) -> None:
     logging.info(f'ELF file SHA256: {sha256_expected}')
     logging.info(f'ELF file SHA256 (reported by the app): {sha256_reported}')
 
-    # the app reports only the first several hex characters of the SHA256, check that they match
+
     if not sha256_expected.startswith(sha256_reported):
         raise ValueError('ELF file SHA256 mismatch')
 

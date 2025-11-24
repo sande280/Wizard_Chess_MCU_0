@@ -1,4 +1,4 @@
-// ChessBoard.cc
+
 #include "ChessBoard.hh"
 #include "PawnPiece.hh"
 #include "RookPiece.hh"
@@ -33,7 +33,7 @@ namespace Student
             row++;
         }
 
-        // Clean up captured pieces
+
         for (ChessPiece* piece : capturedWhitePieces) {
             delete piece;
         }
@@ -72,21 +72,29 @@ namespace Student
     void ChessBoard::removeCapturedPiece(ChessPiece* piece) {
         if (piece == nullptr) return;
 
-        // Remove from white captured pieces
+
         for (auto it = capturedWhitePieces.begin(); it != capturedWhitePieces.end(); ++it) {
             if (*it == piece) {
+                printf("DEBUG [removeCapturedPiece]: Removing WHITE piece %s (ptr=%p) from capturedWhitePieces. Size before: %d\n",
+                       piece->toString(), (void*)piece, (int)capturedWhitePieces.size());
                 capturedWhitePieces.erase(it);
                 return;
             }
         }
 
-        // Remove from black captured pieces
+
         for (auto it = capturedBlackPieces.begin(); it != capturedBlackPieces.end(); ++it) {
             if (*it == piece) {
+                printf("DEBUG [removeCapturedPiece]: Removing BLACK piece %s (ptr=%p) from capturedBlackPieces. Size before: %d\n",
+                       piece->toString(), (void*)piece, (int)capturedBlackPieces.size());
                 capturedBlackPieces.erase(it);
                 return;
             }
         }
+
+
+        printf("DEBUG [removeCapturedPiece]: WARNING - Piece %s (ptr=%p) NOT FOUND in either capture list!\n",
+               piece->toString(), (void*)piece);
     }
 
     void ChessBoard::createChessPiece(Color col, Type ty, int startRow, int startColumn)
@@ -171,7 +179,7 @@ namespace Student
             return false;
         }
 
-        // CRITICAL: Verify the piece is actually at the position we think it is
+
         if (piece->getRow() != fromRow || piece->getColumn() != fromColumn) {
             printf("ERROR: Piece position mismatch! Piece thinks it's at (%d,%d) but we got it from (%d,%d)\n",
                    piece->getRow(), piece->getColumn(), fromRow, fromColumn);
@@ -246,7 +254,7 @@ namespace Student
             }
         }
 
-        // Save the piece's ACTUAL position before we move it
+
         int originalPieceRow = piece->getRow();
         int originalPieceCol = piece->getColumn();
 
@@ -299,7 +307,7 @@ namespace Student
         return true;
     }
 
-    // Simple version that doesn't modify the board
+
     bool ChessBoard::isValidMoveSimple(int fromRow, int fromColumn, int toRow, int toColumn)
     {
         if (fromRow < 0 || fromRow >= numRows || fromColumn < 0 || fromColumn >= numCols ||
@@ -317,19 +325,19 @@ namespace Student
             return false;
         }
 
-        // Check if it's the right turn
+
         if (piece->getColor() != turn) {
             return false;
         }
 
-        // Basic movement check - can the piece move there?
+
         if (!piece->canMoveToLocation(toRow, toColumn)) {
-            // Check for special pawn en passant move
+
             if (piece->getType() == Pawn && enP) {
                 if (toRow == enPRow && toColumn == enPCol &&
                     piece->getRow() == ((piece->getColor()==White)?(enPRow+1):(enPRow-1)) &&
                     std::abs(piece->getColumn()-enPCol)==1) {
-                    // En passant is allowed
+
                 } else {
                     return false;
                 }
@@ -338,9 +346,9 @@ namespace Student
             }
         }
 
-        // For now, we'll skip the king safety check to avoid board modification
-        // This means some moves that would put the king in check will be shown as possible
-        // but they'll be rejected when actually attempted
+
+
+
         return true;
     }
 
@@ -348,43 +356,43 @@ namespace Student
     {
         std::vector<std::pair<int, int>> possibleMoves;
 
-        // Check if there's a piece at the given position
+
         ChessPiece *piece = getPiece(fromRow, fromColumn);
         if (piece == nullptr) {
-            return possibleMoves;  // Return empty vector if no piece
+            return possibleMoves;
         }
 
-        // NOTE: We don't check turn here because the main game loop already
-        // verifies the piece belongs to the current player
 
-        // Store the current turn to restore it later
+
+
+
         Color savedTurn = turn;
 
-        // Temporarily set turn to the piece's color for isValidMove checks
+
         turn = piece->getColor();
 
-        // Check all possible board positions
+
         for (int toRow = 0; toRow < numRows; toRow++) {
             for (int toColumn = 0; toColumn < numCols; toColumn++) {
-                // Skip the current position
+
                 if (toRow == fromRow && toColumn == fromColumn) {
                     continue;
                 }
 
-                // Check if this is a valid move - now safe since we fixed isValidMove
+
                 if (isValidMove(fromRow, fromColumn, toRow, toColumn)) {
                     possibleMoves.push_back(std::pair<int, int>(toRow, toColumn));
                 }
             }
         }
 
-        // Restore the original turn
+
         turn = savedTurn;
 
         return possibleMoves;
     }
 
-    bool ChessBoard::movePiece(int fromRow, int fromColumn, int toRow, int toColumn)
+    bool ChessBoard::movePiece(int fromRow, int fromColumn, int toRow, int toColumn, bool isSimulation)
     {
         ChessPiece *pieceM = getPiece(fromRow, fromColumn);
         if(pieceM == nullptr) {
@@ -418,11 +426,16 @@ namespace Student
             {
                 victim = getPiece(toRow, toColumn);
                 if(victim != nullptr) {
-                    // Track captured piece instead of deleting
-                    if (victim->getColor() == White) {
-                        capturedWhitePieces.push_back(victim);
-                    } else {
-                        capturedBlackPieces.push_back(victim);
+
+                    if (!isSimulation) {
+                        if (victim->getColor() == White) {
+                            capturedWhitePieces.push_back(victim);
+                        } else {
+                            capturedBlackPieces.push_back(victim);
+                        }
+                        printf("DEBUG [movePiece]: Captured %s piece at (%d,%d), ptr=%p. White captured: %d, Black captured: %d\n",
+                               victim->toString(), toRow, toColumn, (void*)victim,
+                               (int)capturedWhitePieces.size(), (int)capturedBlackPieces.size());
                     }
                 }
                 pieceM->setPosition(toRow, toColumn);
@@ -434,11 +447,16 @@ namespace Student
                 int rp=(pieceM->getColor()==White?(enPRow+1):(enPRow-1));
                 enPCap = getPiece(rp,enPCol);
                 if (enPCap!=nullptr) {
-                    // Track captured piece instead of deleting
-                    if (enPCap->getColor() == White) {
-                        capturedWhitePieces.push_back(enPCap);
-                    } else {
-                        capturedBlackPieces.push_back(enPCap);
+
+                    if (!isSimulation) {
+                        if (enPCap->getColor() == White) {
+                            capturedWhitePieces.push_back(enPCap);
+                        } else {
+                            capturedBlackPieces.push_back(enPCap);
+                        }
+                        printf("DEBUG [movePiece En Passant]: Captured %s piece at (%d,%d), ptr=%p. White captured: %d, Black captured: %d\n",
+                               enPCap->toString(), rp, enPCol, (void*)enPCap,
+                               (int)capturedWhitePieces.size(), (int)capturedBlackPieces.size());
                     }
                 }
                 board[rp][enPCol]=nullptr;
@@ -450,11 +468,16 @@ namespace Student
             {
                 victim = getPiece(toRow,toColumn);
                 if(victim!=nullptr) {
-                    // Track captured piece instead of deleting (shouldn't happen in valid castling)
-                    if (victim->getColor() == White) {
-                        capturedWhitePieces.push_back(victim);
-                    } else {
-                        capturedBlackPieces.push_back(victim);
+
+                    if (!isSimulation) {
+                        if (victim->getColor() == White) {
+                            capturedWhitePieces.push_back(victim);
+                        } else {
+                            capturedBlackPieces.push_back(victim);
+                        }
+                        printf("DEBUG [movePiece Castling]: Captured %s piece at (%d,%d), ptr=%p. White captured: %d, Black captured: %d\n",
+                               victim->toString(), toRow, toColumn, (void*)victim,
+                               (int)capturedWhitePieces.size(), (int)capturedBlackPieces.size());
                     }
                 }
                 pieceM->setPosition(toRow,toColumn);
@@ -468,7 +491,7 @@ namespace Student
                 int nRCol=fromColumn+step;
                 ChessPiece* vv=getPiece(fromRow,nRCol);
                 if(vv!=nullptr) {
-                    // Track captured piece instead of deleting (shouldn't happen in valid castling)
+
                     if (vv->getColor() == White) {
                         capturedWhitePieces.push_back(vv);
                     } else {
@@ -640,7 +663,7 @@ namespace Student
     {
         std::ostringstream outputString;
 
-        // Display column headers (0-9, A-B for 12 columns)
+
         outputString << "    ";
         for (int i = 0; i < 12; i++) {
             if (i < 10) {
@@ -651,29 +674,32 @@ namespace Student
         }
         outputString << std::endl;
 
-        // Display separator line
+
         outputString << "    ";
         for (int i = 0; i < 12; i++) {
             outputString << "--";
         }
         outputString << std::endl;
 
-        // Display each row
+
         for (int row = 0; row < numRows; row++) {
             outputString << "  " << row << "|";
 
-            // Left capture zone (columns 0-1) - show captured BLACK pieces
+
             for (int captureCol = 0; captureCol < 2; captureCol++) {
-                // Calculate which captured piece to show here
+
                 size_t capturedIndex = row * 2 + captureCol;
                 if (capturedIndex < capturedBlackPieces.size()) {
+                    printf("DEBUG [displayExpandedBoard]: Accessing BLACK captured[%zu] = %s (ptr=%p)\n",
+                           capturedIndex, capturedBlackPieces[capturedIndex]->toString(),
+                           (void*)capturedBlackPieces[capturedIndex]);
                     outputString << capturedBlackPieces[capturedIndex]->toString() << " ";
                 } else {
                     outputString << "  ";
                 }
             }
 
-            // Main board (columns 2-9, mapped from internal 0-7)
+
             for (int col = 0; col < numCols; col++) {
                 ChessPiece *piece = getPiece(row, col);
                 if (piece != nullptr) {
@@ -684,11 +710,14 @@ namespace Student
                 outputString << " ";
             }
 
-            // Right capture zone (columns 10-11) - show captured WHITE pieces
+
             for (int captureCol = 0; captureCol < 2; captureCol++) {
-                // Calculate which captured piece to show here
+
                 size_t capturedIndex = row * 2 + captureCol;
                 if (capturedIndex < capturedWhitePieces.size()) {
+                    printf("DEBUG [displayExpandedBoard]: Accessing WHITE captured[%zu] = %s (ptr=%p)\n",
+                           capturedIndex, capturedWhitePieces[capturedIndex]->toString(),
+                           (void*)capturedWhitePieces[capturedIndex]);
                     outputString << capturedWhitePieces[capturedIndex]->toString() << " ";
                 } else {
                     outputString << "  ";
@@ -698,7 +727,7 @@ namespace Student
             outputString << "|" << std::endl;
         }
 
-        // Bottom separator
+
         outputString << "    ";
         for (int i = 0; i < 12; i++) {
             outputString << "--";
