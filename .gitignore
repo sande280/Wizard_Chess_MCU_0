@@ -68,3 +68,7 @@ __pycache__/
 # ESP-IDF specific
 .espressif/
 dependencies.lock
+
+
+
+checkpoint_backup_working_capture_zones/
