@@ -40,19 +40,19 @@ static const char *TAG = "ESP_CHESS";
 #define RD_BUF_SIZE (BUF_SIZE)
 
 
-//Bit sequences for pieces
-//000 or 111 = emtpy space
-//001 = Pawn
-//010 = Bishop
-//011 = Knight
-//100 = Rook
-//101 = Queen
-//110 = King
 
-//Bit sequences for color
-//0000 = Off
-//0001 = Red
-//1111 = White
+
+
+
+
+
+
+
+
+
+
+
+
 
 static esp_timer_handle_t step_timer = nullptr;
 
@@ -62,7 +62,7 @@ typedef struct {
     int dirA, dirB;
     uint32_t leader_steps;
     uint32_t follower_steps;
-    int leader_id; // 1=A, 2=B
+    int leader_id;
     float step_period_us;
     int error_term;
     bool active;
@@ -173,7 +173,7 @@ int translateColumn(int displayCol) {
     return displayCol - 2;
 }
 
-// Simple AI structure and function
+
 namespace Student {
     struct SimpleMove {
         int fromRow, fromCol, toRow, toCol;
@@ -204,7 +204,7 @@ void makeAIMove(ChessBoard& board, Color& currentPlayer) {
     board.setTurn(currentPlayer);
     if (board.movePiece(bestMove.fromRow, bestMove.fromCol, bestMove.toRow, bestMove.toCol)) {
         if (isCapture && aiPiece && targetPiece) {
-            // Capture move - need two confirmations
+
             auto captureDestination = PathAnalyzer::findCaptureZoneDestination(board, targetPiece->getColor());
             PathType capturePath = PathAnalyzer::analyzeMovePath(bestMove.toRow, bestMove.toCol, captureDestination.first, captureDestination.second, board, targetPiece->getType(), false);
             PathType attackPath = PathAnalyzer::analyzeMovePath(bestMove.fromRow, bestMove.fromCol, bestMove.toRow, bestMove.toCol, board, aiPiece->getType(), false);
@@ -213,7 +213,7 @@ void makeAIMove(ChessBoard& board, Color& currentPlayer) {
                        PathAnalyzer::pathTypeToString(capturePath).c_str(),
                        bestMove.toRow, bestMove.toCol + 2, captureDestination.first, captureDestination.second + 2);
 
-            // First confirmation: captured piece to capture zone
+
             do {
                 uart_printf("Move captured piece to capture zone - Movement complete (y or n)? ");
                 uart_read_line(input, sizeof(input));
@@ -230,7 +230,7 @@ void makeAIMove(ChessBoard& board, Color& currentPlayer) {
                        PathAnalyzer::pathTypeToString(attackPath).c_str(),
                        bestMove.fromRow, bestMove.fromCol + 2, bestMove.toRow, bestMove.toCol + 2);
 
-            // Second confirmation: attacking piece to destination
+
             do {
                 uart_printf("Move attacking piece to destination - Movement complete (y or n)? ");
                 uart_read_line(input, sizeof(input));
@@ -243,13 +243,13 @@ void makeAIMove(ChessBoard& board, Color& currentPlayer) {
                 return;
             }
         } else if (aiPiece) {
-            // Regular move - single confirmation
+
             PathType movePath = PathAnalyzer::analyzeMovePath(bestMove.fromRow, bestMove.fromCol, bestMove.toRow, bestMove.toCol, board, aiPiece->getType(), false);
             uart_printf("\r\nMovement path: %s from (%d,%d) to (%d,%d)\r\n",
                        PathAnalyzer::pathTypeToString(movePath).c_str(),
                        bestMove.fromRow, bestMove.fromCol + 2, bestMove.toRow, bestMove.toCol + 2);
 
-            // Confirmation for regular move
+
             do {
                 uart_printf("Movement complete (y or n)? ");
                 uart_read_line(input, sizeof(input));
@@ -293,7 +293,7 @@ void makeMinimaxMove(ChessBoard& board, Color& currentPlayer, int depth) {
     board.setTurn(currentPlayer);
     if (board.movePiece(bestMove.fromRow, bestMove.fromCol, bestMove.toRow, bestMove.toCol)) {
         if (isCapture && aiPiece && targetPiece) {
-            // Capture move - need two confirmations
+
             auto captureDestination = PathAnalyzer::findCaptureZoneDestination(board, targetPiece->getColor());
             PathType capturePath = PathAnalyzer::analyzeMovePath(bestMove.toRow, bestMove.toCol, captureDestination.first, captureDestination.second, board, targetPiece->getType(), false);
             PathType attackPath = PathAnalyzer::analyzeMovePath(bestMove.fromRow, bestMove.fromCol, bestMove.toRow, bestMove.toCol, board, aiPiece->getType(), false);
@@ -302,7 +302,7 @@ void makeMinimaxMove(ChessBoard& board, Color& currentPlayer, int depth) {
                        PathAnalyzer::pathTypeToString(capturePath).c_str(),
                        bestMove.toRow, bestMove.toCol + 2, captureDestination.first, captureDestination.second + 2);
 
-            // First confirmation: captured piece to capture zone
+
             do {
                 uart_printf("Move captured piece to capture zone - Movement complete (y or n)? ");
                 uart_read_line(input, sizeof(input));
@@ -319,7 +319,7 @@ void makeMinimaxMove(ChessBoard& board, Color& currentPlayer, int depth) {
                        PathAnalyzer::pathTypeToString(attackPath).c_str(),
                        bestMove.fromRow, bestMove.fromCol + 2, bestMove.toRow, bestMove.toCol + 2);
 
-            // Second confirmation: attacking piece to destination
+
             do {
                 uart_printf("Move attacking piece to destination - Movement complete (y or n)? ");
                 uart_read_line(input, sizeof(input));
@@ -332,13 +332,13 @@ void makeMinimaxMove(ChessBoard& board, Color& currentPlayer, int depth) {
                 return;
             }
         } else if (aiPiece) {
-            // Regular move - single confirmation
+
             PathType movePath = PathAnalyzer::analyzeMovePath(bestMove.fromRow, bestMove.fromCol, bestMove.toRow, bestMove.toCol, board, aiPiece->getType(), false);
             uart_printf("\r\nMovement path: %s from (%d,%d) to (%d,%d)\r\n",
                        PathAnalyzer::pathTypeToString(movePath).c_str(),
                        bestMove.fromRow, bestMove.fromCol + 2, bestMove.toRow, bestMove.toCol + 2);
 
-            // Confirmation for regular move
+
             do {
                 uart_printf("Movement complete (y or n)? ");
                 uart_read_line(input, sizeof(input));
@@ -654,7 +654,7 @@ void chess_game_task(void *pvParameter) {
 
         uart_printf("\r\n%s's turn.\r\n", colorToString(currentPlayer).c_str());
 
-        // Keep prompting until we get non-empty input
+
         do {
             uart_printf("Enter move: ");
             uart_read_line(input, sizeof(input));
@@ -892,7 +892,7 @@ void chess_game_task(void *pvParameter) {
                 uart_printf("  %d: (%d,%d)\r\n", (int)(i + 1), possibleMoves[i].first, possibleMoves[i].second + 2);
             }
 
-            // Keep prompting until we get non-empty input
+
             do {
                 uart_printf("\r\nEnter move number (1-%d) or 'cancel' to select different piece: ", (int)possibleMoves.size());
                 uart_read_line(input, sizeof(input));
@@ -924,7 +924,7 @@ void chess_game_task(void *pvParameter) {
                 }
 
                 if (targetPiece != nullptr && movingPiece) {
-                    // Capture move - need two confirmations
+
                     auto captureDestination = PathAnalyzer::findCaptureZoneDestination(board, targetPiece->getColor());
                     PathType capturePath = PathAnalyzer::analyzeMovePath(toRow, toCol, captureDestination.first, captureDestination.second, board, targetPiece->getType(), false);
                     PathType attackPath = PathAnalyzer::analyzeMovePath(fromRow, fromCol, toRow, toCol, board, movingPiece->getType(), false);
@@ -933,7 +933,7 @@ void chess_game_task(void *pvParameter) {
                                PathAnalyzer::pathTypeToString(capturePath).c_str(),
                                toRow, toCol + 2, captureDestination.first, captureDestination.second + 2);
 
-                    // First confirmation: captured piece to capture zone
+
                     do {
                         uart_printf("Move captured piece to capture zone - Movement complete (y or n)? ");
                         uart_read_line(input, sizeof(input));
@@ -950,7 +950,7 @@ void chess_game_task(void *pvParameter) {
                                PathAnalyzer::pathTypeToString(attackPath).c_str(),
                                fromRow, fromCol + 2, toRow, toCol + 2);
 
-                    // Second confirmation: attacking piece to destination
+
                     do {
                         uart_printf("Move attacking piece to destination - Movement complete (y or n)? ");
                         uart_read_line(input, sizeof(input));
@@ -963,13 +963,13 @@ void chess_game_task(void *pvParameter) {
                         continue;
                     }
                 } else if (movingPiece) {
-                    // Regular move - single confirmation
+
                     PathType movePath = PathAnalyzer::analyzeMovePath(fromRow, fromCol, toRow, toCol, board, movingPiece->getType(), false);
                     uart_printf("\r\nMovement path: %s from (%d,%d) to (%d,%d)\r\n",
                                PathAnalyzer::pathTypeToString(movePath).c_str(),
                                fromRow, fromCol + 2, toRow, toCol + 2);
 
-                    // Confirmation for regular move
+
                     do {
                         uart_printf("Movement complete (y or n)? ");
                         uart_read_line(input, sizeof(input));
@@ -1031,7 +1031,7 @@ void chess_game_task(void *pvParameter) {
                 }
 
                 if (targetPiece != nullptr && piece) {
-                    // Capture move - need two confirmations
+
                     auto captureDestination = PathAnalyzer::findCaptureZoneDestination(board, targetPiece->getColor());
                     PathType capturePath = PathAnalyzer::analyzeMovePath(toRow, toCol, captureDestination.first, captureDestination.second, board, targetPiece->getType(), false);
                     PathType attackPath = PathAnalyzer::analyzeMovePath(fromRow, fromCol, toRow, toCol, board, piece->getType(), false);
@@ -1040,7 +1040,7 @@ void chess_game_task(void *pvParameter) {
                                PathAnalyzer::pathTypeToString(capturePath).c_str(),
                                toRow, toCol + 2, captureDestination.first, captureDestination.second + 2);
 
-                    // First confirmation: captured piece to capture zone
+
                     do {
                         uart_printf("Move captured piece to capture zone - Movement complete (y or n)? ");
                         uart_read_line(input, sizeof(input));
@@ -1057,7 +1057,7 @@ void chess_game_task(void *pvParameter) {
                                PathAnalyzer::pathTypeToString(attackPath).c_str(),
                                fromRow, fromCol + 2, toRow, toCol + 2);
 
-                    // Second confirmation: attacking piece to destination
+
                     do {
                         uart_printf("Move attacking piece to destination - Movement complete (y or n)? ");
                         uart_read_line(input, sizeof(input));
@@ -1070,13 +1070,13 @@ void chess_game_task(void *pvParameter) {
                         continue;
                     }
                 } else if (piece) {
-                    // Regular move - single confirmation
+
                     PathType movePath = PathAnalyzer::analyzeMovePath(fromRow, fromCol, toRow, toCol, board, piece->getType(), false);
                     uart_printf("\r\nMovement path: %s from (%d,%d) to (%d,%d)\r\n",
                                PathAnalyzer::pathTypeToString(movePath).c_str(),
                                fromRow, fromCol + 2, toRow, toCol + 2);
 
-                    // Confirmation for regular move
+
                     do {
                         uart_printf("Movement complete (y or n)? ");
                         uart_read_line(input, sizeof(input));
@@ -1135,7 +1135,7 @@ static void IRAM_ATTR step_timer_cb(void* arg) {
                 }
             }
         }
-    } else { // B is leader
+    } else {
         if (move_ctx.sent_B < move_ctx.total_B) {
             pulse_step(STEP2_PIN);
             motors.B_pos += (move_ctx.dirB > 0 ? 1 : -1);
@@ -1152,15 +1152,15 @@ static void IRAM_ATTR step_timer_cb(void* arg) {
         }
     }
 
-    // stop when both complete
+
     if (move_ctx.sent_A >= move_ctx.total_A && move_ctx.sent_B >= move_ctx.total_B) {
         move_ctx.active = false;
         esp_timer_stop(step_timer);
         gantry.motion_active = false;
         gantry.position_reached = true;
     }
-    
-    // Update live XY coordinates
+
+
     gantry.x = (motors.A_pos + motors.B_pos) / (2.0f * STEPS_PER_MM);
     gantry.y = (motors.A_pos - motors.B_pos) / (2.0f * STEPS_PER_MM);
 
@@ -1179,7 +1179,7 @@ void gpio_output_init(gpio_num_t pin) {
 
 
 bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, bool magnet_on) {
-    
+
     if (speed_mm_s <= 0.0f) return false;
 
     gpio_set_level(MAGNET_PIN, magnet_on);
@@ -1204,11 +1204,11 @@ bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, bool magne
     move_ctx.sent_A = move_ctx.sent_B = 0;
     move_ctx.error_term = 0;
 
-    // Set directions
+
     gpio_set_level(DIR1_PIN, move_ctx.dirA > 0 ? 1 : 0);
     gpio_set_level(DIR2_PIN, move_ctx.dirB > 0 ? 1 : 0);
 
-    // Determine leader/follower
+
     if (move_ctx.total_A >= move_ctx.total_B) {
         move_ctx.leader_id = 1;
         move_ctx.leader_steps = move_ctx.total_A;
@@ -1219,7 +1219,7 @@ bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, bool magne
         move_ctx.follower_steps = move_ctx.total_A;
     }
 
-    // step frequency based on leader
+
     float freq = move_ctx.leader_steps / time_s;
     move_ctx.step_period_us = 1e6 / freq;
 
@@ -1267,14 +1267,14 @@ void app_main(void) {
     gpio_output_init(MODE0_PIN);
     gpio_output_init(MODE1_PIN);
     gpio_output_init(MODE2_PIN);
-    
+
     gpio_set_level(SLEEP_PIN, 1);
     gpio_set_level(EN_PIN, 1);
     gpio_set_level(HFS_PIN, 1);
     gpio_set_level(MODE0_PIN, 0);
     gpio_set_level(MODE1_PIN, 0);
     gpio_set_level(MODE2_PIN, 1);
-    
+
     setupMotion();
     vTaskDelay(pdMS_TO_TICKS(2000));
     ESP_LOGI("INIT", "Hardware Startup done");
@@ -1294,40 +1294,15 @@ void app_main(void) {
                                   UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
     xTaskCreate(chess_game_task, "chess_game", 8192, NULL, 10, NULL);
-    // Initialize move queue and push some demo commands
-    // move_queue_init();
-    // MoveCommand mc;
-    // mc.x = 200.0f; mc.y = 0.0f; mc.speed = 200.0f; mc.magnet = false;
-    // move_queue_push(&mc);
-    // mc.x = 300.0f; mc.y = 200.0f; mc.speed = 250.0f; mc.magnet = true;
-    // move_queue_push(&mc);
-    // mc.x = 0.0f; mc.y = 0.0f; mc.speed = 200.0f; mc.magnet = false;
-    // move_queue_push(&mc);
-    // ESP_LOGI("INIT", "Pushed moves to queue");
-    /*
-    // Test moves
-    plan_move(0, 0, 5, 3, true);
-    plan_move(5, 3, 0, 0, false);
-    ESP_LOGI("INIT", "Gantry motion and position status: active=%d reached=%d", gantry.motion_active ? 1 : 0, gantry.position_reached ? 1 : 0);
 
-    while (true) {
-        // If idle and there are queued moves, dispatch the next one
-        if (gantry.position_reached && !move_queue_is_empty()) {
-            MoveCommand next;
-            if (move_queue_pop(&next)) {
-                ESP_LOGI("MOVE", "Dispatching queued move to (%.2f, %.2f) speed=%.1f magnet=%d", next.x, next.y, next.speed, next.magnet ? 1 : 0);
-                moveToXY(next.x, next.y, next.speed, next.magnet);
-            }
-            else {
-            ESP_LOGI("INIT", "Pop failed unexpectedly");
-            }
-        }
 
-        if (gantry.position_reached) {
-            ESP_LOGI("MOVE", "Idle: position reached");
-        }
-        vTaskDelay(pdMS_TO_TICKS(200));
-    }
 
-    */
+
+
+
+
+
+
+
+
 }

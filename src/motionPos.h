@@ -8,29 +8,29 @@ const float DIST_PER_REV_MM = PULLEY_TEETH * BELT_PITCH_MM;
 const float STEPS_PER_MM    = (STEPS_PER_REV * MICROSTEP) / DIST_PER_REV_MM;
 
 
-//--------------------------------------------
-// Motion State
-//--------------------------------------------
-// Named structs so we can declare extern instances in this header
+
+
+
+
 typedef struct {
-    float x, y;              // current XY position (mm)
+    float x, y;
     float x_target, y_target;
     bool motion_active;
     bool position_reached;
 } Gantry_t;
 
 typedef struct {
-    long A_pos, B_pos;        // current step counts
-    long A_target, B_target;  // target step counts
+    long A_pos, B_pos;
+    long A_target, B_target;
 } Motors_t;
 
-// Declare global instances (defined in motionPos.cpp)
+
 extern Gantry_t gantry;
 extern Motors_t motors;
 
-//--------------------------------------------
-// Initialization
-//--------------------------------------------
+
+
+
 void setupMotion();
 
 void plan_move(int A_from, int B_from, int A_to, int B_to, bool direct);

@@ -17,8 +17,8 @@ namespace Student
         int numCols = 0;
         Color turn = White;
         std::vector<std::vector<ChessPiece *>> board;
-        std::vector<ChessPiece *> capturedWhitePieces;  // White pieces captured by Black
-        std::vector<ChessPiece *> capturedBlackPieces;  // Black pieces captured by White
+        std::vector<ChessPiece *> capturedWhitePieces;
+        std::vector<ChessPiece *> capturedBlackPieces;
         bool whiteKingMoved = false;
         bool blackKingMoved = false;
         bool whiteRookLeftMoved = false;
@@ -46,7 +46,7 @@ namespace Student
         Color getTurn() const { return turn; }
         bool isPieceUnderThreat(int row, int column);
         std::ostringstream displayBoard();
-        std::ostringstream displayExpandedBoard();  // New method for 12x8 display
+        std::ostringstream displayExpandedBoard();
         float scoreBoard();
         float getHighestNextScore();
         const std::vector<ChessPiece*>& getCapturedWhitePieces() const { return capturedWhitePieces; }
