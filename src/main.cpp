@@ -40,20 +40,7 @@ static const char *TAG = "ESP_CHESS";
 #define RD_BUF_SIZE (BUF_SIZE)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// AHAHHHHHHHHHH
 static esp_timer_handle_t step_timer = nullptr;
 
 typedef struct {
@@ -62,13 +49,13 @@ typedef struct {
     int dirA, dirB;
     uint32_t leader_steps;
     uint32_t follower_steps;
-    int leader_id;
+    int leader_id; // 1=A, 2=B
     float step_period_us;
     int error_term;
     bool active;
 } move_state_t;
 
-static move_state_t move_ctx{0};
+static move_state_t move_ctx{};
 
 
 
@@ -1135,7 +1122,7 @@ static void IRAM_ATTR step_timer_cb(void* arg) {
                 }
             }
         }
-    } else {
+    } else { // B is leader
         if (move_ctx.sent_B < move_ctx.total_B) {
             pulse_step(STEP2_PIN);
             motors.B_pos += (move_ctx.dirB > 0 ? 1 : -1);
@@ -1152,15 +1139,15 @@ static void IRAM_ATTR step_timer_cb(void* arg) {
         }
     }
 
-
+    // stop when both complete
     if (move_ctx.sent_A >= move_ctx.total_A && move_ctx.sent_B >= move_ctx.total_B) {
         move_ctx.active = false;
         esp_timer_stop(step_timer);
         gantry.motion_active = false;
         gantry.position_reached = true;
     }
-
-
+    
+    // Update live XY coordinates
     gantry.x = (motors.A_pos + motors.B_pos) / (2.0f * STEPS_PER_MM);
     gantry.y = (motors.A_pos - motors.B_pos) / (2.0f * STEPS_PER_MM);
 
@@ -1177,12 +1164,25 @@ void gpio_output_init(gpio_num_t pin) {
     gpio_config(&cfg);
 }
 
+void gpio_input_init(gpio_num_t pin, gpio_int_type_t intr_type) {
+    gpio_config_t cfg = {
+        .pin_bit_mask = (1ULL << pin),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = intr_type
+    };
+    gpio_config(&cfg);
+}
+
 
 bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, bool magnet_on) {
+    
+    
+    gpio_set_level(MAGNET_PIN, magnet_on);
 
     if (speed_mm_s <= 0.0f) return false;
 
-    gpio_set_level(MAGNET_PIN, magnet_on);
 
     float dx = x_target_mm - gantry.x;
     float dy = y_target_mm - gantry.y;
@@ -1204,11 +1204,11 @@ bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, bool magne
     move_ctx.sent_A = move_ctx.sent_B = 0;
     move_ctx.error_term = 0;
 
-
+    // Set directions
     gpio_set_level(DIR1_PIN, move_ctx.dirA > 0 ? 1 : 0);
     gpio_set_level(DIR2_PIN, move_ctx.dirB > 0 ? 1 : 0);
 
-
+    // Determine leader/follower
     if (move_ctx.total_A >= move_ctx.total_B) {
         move_ctx.leader_id = 1;
         move_ctx.leader_steps = move_ctx.total_A;
@@ -1219,7 +1219,7 @@ bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, bool magne
         move_ctx.follower_steps = move_ctx.total_A;
     }
 
-
+    // step frequency based on leader
     float freq = move_ctx.leader_steps / time_s;
     move_ctx.step_period_us = 1e6 / freq;
 
@@ -1249,6 +1249,43 @@ bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, bool magne
     return true;
 }
 
+void moveDispatchTask(void *pvParameters) {
+    while (true) {
+        // If idle and there are queued moves, dispatch the next one
+        if (gantry.position_reached && !move_queue_is_empty()) {
+            MoveCommand next;
+            if (move_queue_pop(&next)) {
+                ESP_LOGI("MOVE", "Dispatching queued move to (%.2f, %.2f) speed=%.1f magnet=%d", next.x, next.y, next.speed, next.magnet ? 1 : 0);
+                moveToXY(next.x, next.y, next.speed, next.magnet);
+            }
+            else {
+                ESP_LOGI("INIT", "Pop failed unexpectedly");
+            }
+        }
+
+        if (gantry.position_reached) {
+            ESP_LOGI("MOVE", "Idle: position reached");
+        }
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}
+
+volatile bool limit_x_triggered = false;
+volatile bool limit_y_triggered = false;
+
+static void IRAM_ATTR limit_switch_isr_handler(void* arg) {
+    uint32_t gpio_num = (uint32_t) arg;
+    if (gpio_num == LIMIT_Y_PIN) {
+        limit_y_triggered = true;
+    } else if (gpio_num == LIMIT_X_PIN) {
+        limit_x_triggered = true;
+    }
+    // Stop motors immediately
+    move_ctx.active = false;
+    esp_timer_stop(step_timer);
+    gantry.motion_active = false;
+}
+
 
 extern "C" {
     void app_main(void);
@@ -1260,6 +1297,7 @@ void app_main(void) {
     gpio_output_init(STEP1_PIN);
     gpio_output_init(STEP2_PIN);
     gpio_output_init(DIR1_PIN);
+    gpio_output_init(MAGNET_PIN);
     gpio_output_init(DIR2_PIN);
     gpio_output_init(SLEEP_PIN);
     gpio_output_init(EN_PIN);
@@ -1267,6 +1305,13 @@ void app_main(void) {
     gpio_output_init(MODE0_PIN);
     gpio_output_init(MODE1_PIN);
     gpio_output_init(MODE2_PIN);
+    
+    gpio_input_init(LIMIT_Y_PIN, GPIO_INTR_NEGEDGE);
+    gpio_input_init(LIMIT_X_PIN, GPIO_INTR_NEGEDGE);
+
+    gpio_install_isr_service(0);
+    gpio_isr_handler_add(LIMIT_Y_PIN, limit_switch_isr_handler, (void*) LIMIT_Y_PIN);
+    gpio_isr_handler_add(LIMIT_X_PIN, limit_switch_isr_handler, (void*) LIMIT_X_PIN);
 
     gpio_set_level(SLEEP_PIN, 1);
     gpio_set_level(EN_PIN, 1);
@@ -1274,10 +1319,26 @@ void app_main(void) {
     gpio_set_level(MODE0_PIN, 0);
     gpio_set_level(MODE1_PIN, 0);
     gpio_set_level(MODE2_PIN, 1);
-
+    
     setupMotion();
     vTaskDelay(pdMS_TO_TICKS(2000));
-    ESP_LOGI("INIT", "Hardware Startup done");
+    ESP_LOGI("INIT", "Startup, beginning homing sequence.");
+
+    int homeOK = home_gantry();
+
+    if (homeOK == -1) {
+        ESP_LOGI("INIT", "Homing failed. Halting.");
+        while (1) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+    }
+    else{
+        ESP_LOGI("INIT", "Homing sequence complete.");
+    }
+
+    if (homeOK != -1) {
+        xTaskCreate(moveDispatchTask, "MoveDispatch", 4096, NULL, 5, NULL);
+    }
 
     uart_config_t uart_config = {};
     uart_config.baud_rate = 9600;
