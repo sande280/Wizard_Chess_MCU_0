@@ -17,6 +17,7 @@
 #include <cstring>
 #include "driver/ledc.h"
 #include "esp_timer.h"
+#include "driver/i2c.h"
 
 #include "Chess.h"
 #include "ChessBoard.hh"
@@ -588,6 +589,31 @@ void uart_printf(const char* format, ...) {
     vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
     uart_write_bytes(UART_NUM, buffer, strlen(buffer));
+}
+
+#define I2C_SLAVE_SDA_IO        10
+#define I2C_SLAVE_SCL_IO        11
+#define I2C_SLAVE_PORT          I2C_NUM_0
+#define I2C_SLAVE_ADDRESS       0x67
+#define I2C_RX_BUF_LEN          256
+#define I2C_TX_BUF_LEN          256
+
+static void i2c_slave_init(void)
+{
+    i2c_config_t conf = {
+        .mode = I2C_MODE_SLAVE,
+        .sda_io_num = I2C_SLAVE_SDA_IO,
+        .scl_io_num = I2C_SLAVE_SCL_IO,
+        .sda_pullup_en = GPIO_PULLUP_ENABLE,
+        .scl_pullup_en = GPIO_PULLUP_ENABLE,
+        .slave = {
+            .addr_10bit_en = 0,
+            .slave_addr = I2C_SLAVE_ADDRESS,
+        },
+    };
+
+    ESP_ERROR_CHECK(i2c_param_config(I2C_SLAVE_PORT, &conf));
+    ESP_ERROR_CHECK(i2c_driver_install(I2C_SLAVE_PORT, conf.mode, I2C_RX_BUF_LEN, I2C_TX_BUF_LEN, 0));
 }
 
 void chess_game_task(void *pvParameter) {
@@ -1257,6 +1283,68 @@ extern "C" {
 void app_main(void) {
     ESP_LOGI(TAG, "Starting ESP32 Chess Game");
 
+    i2c_slave_init();
+
+    uint8_t rx_buffer[I2C_RX_BUF_LEN];
+
+    //C = white king
+    //B = white queen
+    //A = white rook
+    //9 = white knight
+    //8 = white bishop
+    //7 = white pawn
+    //6 = black king
+    //5 = black queen
+    //4 = black rook
+    //3 = black knight
+    //2 = black bishop
+    //1 = black pawn
+    //0 = empty square
+
+    static uint8_t tx_buffer[33] = {
+        0xAA, 0xA9, 0x8B, 0xC8, 0x9A, 0x77, 0x77, 0x77, 0x77,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x11, 0x11, 0x11, 0x11, 0x43, 0x25, 0x63, 0x34};
+
+    static uint8_t i2c_starter[3] = {0x1A, 0x2B, 0x3C};
+
+    while (1)
+    {
+        int bytes_read = i2c_slave_read_buffer(I2C_SLAVE_PORT, rx_buffer, sizeof(rx_buffer), pdMS_TO_TICKS(10));
+
+        if (bytes_read > 0 && (rx_buffer[0] == 0xA1) && (rx_buffer[1] == 0xB2) && (rx_buffer[2] == 0xC3))
+        {
+            for (int i = 0; i < bytes_read; i++) {
+                printf("%02X ", rx_buffer[i]);
+            }
+            printf("\n");
+
+            i2c_slave_write_buffer(I2C_SLAVE_PORT, i2c_starter, sizeof(i2c_starter), pdMS_TO_TICKS(100));
+        }
+        else if ((bytes_read > 0) && (rx_buffer[0] == 0xFF))
+        {
+            for (int i = 0; i < bytes_read; i++) {
+                printf("%02X ", rx_buffer[i]);
+            }
+            printf("\n");
+
+            i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, sizeof(tx_buffer), pdMS_TO_TICKS(100));
+        }
+        else if ((bytes_read > 0) && (rx_buffer[0] == 0x3D))
+        {
+            for (int i = 0; i < bytes_read; i++) {
+                printf("%02X ", rx_buffer[i]);
+            }
+            printf("\n");
+
+            i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, sizeof(tx_buffer), pdMS_TO_TICKS(100));
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+
     gpio_output_init(STEP1_PIN);
     gpio_output_init(STEP2_PIN);
     gpio_output_init(DIR1_PIN);
@@ -1279,25 +1367,7 @@ void app_main(void) {
     vTaskDelay(pdMS_TO_TICKS(2000));
     ESP_LOGI("INIT", "Hardware Startup done");
 
-    uart_config_t uart_config = {};
-    uart_config.baud_rate = 9600;
-    uart_config.data_bits = UART_DATA_8_BITS;
-    uart_config.parity = UART_PARITY_DISABLE;
-    uart_config.stop_bits = UART_STOP_BITS_1;
-    uart_config.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
-    uart_config.rx_flow_ctrl_thresh = 0;
-    uart_config.source_clk = UART_SCLK_DEFAULT;
-
-    ESP_ERROR_CHECK(uart_driver_install(UART_NUM, BUF_SIZE * 2, 0, 0, NULL, 0));
-    ESP_ERROR_CHECK(uart_param_config(UART_NUM, &uart_config));
-    ESP_ERROR_CHECK(uart_set_pin(UART_NUM, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE,
-                                  UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
-
-    xTaskCreate(chess_game_task, "chess_game", 8192, NULL, 10, NULL);
-
-
-
-
+    
 
 
 
