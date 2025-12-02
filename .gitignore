@@ -64,6 +64,7 @@ __pycache__/
 *.pyc
 
 # Unused Python scripts
+position_lookup_generator.py
 pytest_hello_world.py
 add_compile_commands.py
 src/convert_board_states.py
