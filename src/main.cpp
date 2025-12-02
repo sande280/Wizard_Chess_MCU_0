@@ -598,6 +598,13 @@ void uart_printf(const char* format, ...) {
 #define I2C_RX_BUF_LEN          256
 #define I2C_TX_BUF_LEN          256
 
+// Game state for I2C UI integration
+enum GameMode { MODE_NONE, MODE_PHYSICAL, MODE_UI };
+static GameMode currentMode = MODE_NONE;
+static Color playerColor = White;  // Human player's color
+static Color currentTurn = White;
+static int selectedRow = -1, selectedCol = -1;
+
 static void i2c_slave_init(void)
 {
     i2c_config_t conf = {
@@ -614,6 +621,45 @@ static void i2c_slave_init(void)
 
     ESP_ERROR_CHECK(i2c_param_config(I2C_SLAVE_PORT, &conf));
     ESP_ERROR_CHECK(i2c_driver_install(I2C_SLAVE_PORT, conf.mode, I2C_RX_BUF_LEN, I2C_TX_BUF_LEN, 0));
+}
+
+// Convert ChessPiece to I2C protocol nibble (0-C)
+// Protocol: 0=empty, 1-6=black pieces, 7-C=white pieces
+uint8_t pieceToNibble(ChessPiece* piece) {
+    if (!piece) return 0;
+    // Type enum: Pawn=0, Rook=1, Bishop=2, King=3, Knight=4, Queen=5
+    // Protocol: pawn=1, bishop=2, knight=3, rook=4, queen=5, king=6
+    static const uint8_t typeMap[] = {1, 4, 2, 6, 3, 5};  // Pawn,Rook,Bishop,King,Knight,Queen
+    uint8_t base = typeMap[piece->getType()];
+    return (piece->getColor() == White) ? base + 6 : base;
+}
+
+// Serialize board state to 33-byte buffer (0xAA header + 32 bytes)
+void serializeBoardState(ChessBoard& board, uint8_t* buffer) {
+    buffer[0] = 0xAA;  // Header
+    for (int i = 0; i < 32; i++) {
+        int idx = i * 2;
+        int row1 = idx / 8, col1 = idx % 8;
+        int row2 = (idx + 1) / 8, col2 = (idx + 1) % 8;
+        uint8_t high = pieceToNibble(board.getPiece(row1, col1));
+        uint8_t low = pieceToNibble(board.getPiece(row2, col2));
+        buffer[1 + i] = (high << 4) | low;
+    }
+}
+
+// Serialize possible moves to 32-byte bitmap (0xF for valid, 0x0 for invalid)
+void serializePossibleMoves(ChessBoard& board, int row, int col, uint8_t* buffer) {
+    memset(buffer, 0, 32);
+    auto moves = board.getPossibleMoves(row, col);
+    for (auto& move : moves) {
+        int index = move.first * 8 + move.second;  // 0-63
+        int byteIndex = index / 2;
+        if (index % 2 == 0) {
+            buffer[byteIndex] |= 0xF0;  // High nibble
+        } else {
+            buffer[byteIndex] |= 0x0F;  // Low nibble
+        }
+    }
 }
 
 void chess_game_task(void *pvParameter) {
@@ -1281,70 +1327,9 @@ extern "C" {
 }
 
 void app_main(void) {
-    ESP_LOGI(TAG, "Starting ESP32 Chess Game");
+    ESP_LOGI(TAG, "Starting ESP32 Chess Game with I2C UI Integration");
 
-    i2c_slave_init();
-
-    uint8_t rx_buffer[I2C_RX_BUF_LEN];
-
-    //C = white king
-    //B = white queen
-    //A = white rook
-    //9 = white knight
-    //8 = white bishop
-    //7 = white pawn
-    //6 = black king
-    //5 = black queen
-    //4 = black rook
-    //3 = black knight
-    //2 = black bishop
-    //1 = black pawn
-    //0 = empty square
-
-    static uint8_t tx_buffer[33] = {
-        0xAA, 0xA9, 0x8B, 0xC8, 0x9A, 0x77, 0x77, 0x77, 0x77,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x11, 0x11, 0x11, 0x11, 0x43, 0x25, 0x63, 0x34};
-
-    static uint8_t i2c_starter[3] = {0x1A, 0x2B, 0x3C};
-
-    while (1)
-    {
-        int bytes_read = i2c_slave_read_buffer(I2C_SLAVE_PORT, rx_buffer, sizeof(rx_buffer), pdMS_TO_TICKS(10));
-
-        if (bytes_read > 0 && (rx_buffer[0] == 0xA1) && (rx_buffer[1] == 0xB2) && (rx_buffer[2] == 0xC3))
-        {
-            for (int i = 0; i < bytes_read; i++) {
-                printf("%02X ", rx_buffer[i]);
-            }
-            printf("\n");
-
-            i2c_slave_write_buffer(I2C_SLAVE_PORT, i2c_starter, sizeof(i2c_starter), pdMS_TO_TICKS(100));
-        }
-        else if ((bytes_read > 0) && (rx_buffer[0] == 0xFF))
-        {
-            for (int i = 0; i < bytes_read; i++) {
-                printf("%02X ", rx_buffer[i]);
-            }
-            printf("\n");
-
-            i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, sizeof(tx_buffer), pdMS_TO_TICKS(100));
-        }
-        else if ((bytes_read > 0) && (rx_buffer[0] == 0x3D))
-        {
-            for (int i = 0; i < bytes_read; i++) {
-                printf("%02X ", rx_buffer[i]);
-            }
-            printf("\n");
-
-            i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, sizeof(tx_buffer), pdMS_TO_TICKS(100));
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-
-
+    // GPIO init for motors
     gpio_output_init(STEP1_PIN);
     gpio_output_init(STEP2_PIN);
     gpio_output_init(DIR1_PIN);
@@ -1367,12 +1352,146 @@ void app_main(void) {
     vTaskDelay(pdMS_TO_TICKS(2000));
     ESP_LOGI("INIT", "Hardware Startup done");
 
-    
+    // I2C slave init
+    i2c_slave_init();
+    ESP_LOGI("I2C", "I2C slave initialized at address 0x%02X", I2C_SLAVE_ADDRESS);
 
+    // Initialize chess board
+    ChessBoard board(8, 8);
+    setupStandardBoard(board);
+    ESP_LOGI("CHESS", "Chess board initialized");
 
+    uint8_t rx_buffer[I2C_RX_BUF_LEN];
+    uint8_t tx_buffer[64];  // For responses
+    static uint8_t i2c_starter[3] = {0x1A, 0x2B, 0x3C};
 
+    // Piece encoding reference:
+    // 0=empty, 1-6=black (pawn,bishop,knight,rook,queen,king), 7-C=white
 
+    while (1) {
+        int bytes_read = i2c_slave_read_buffer(I2C_SLAVE_PORT, rx_buffer, sizeof(rx_buffer), pdMS_TO_TICKS(10));
 
+        if (bytes_read > 0) {
+            // Print received bytes for debugging
+            printf("RX: ");
+            for (int i = 0; i < bytes_read; i++) {
+                printf("%02X ", rx_buffer[i]);
+            }
+            printf("\n");
 
+            // Handle A1 B2 C3 handshake
+            if (bytes_read >= 3 && rx_buffer[0] == 0xA1 && rx_buffer[1] == 0xB2 && rx_buffer[2] == 0xC3) {
+                printf("Handshake received - responding with 1A 2B 3C\n");
+                i2c_slave_write_buffer(I2C_SLAVE_PORT, i2c_starter, sizeof(i2c_starter), pdMS_TO_TICKS(100));
+            }
+            // Handle 3D - Game mode setup
+            else if (rx_buffer[0] == 0x3D && bytes_read >= 2) {
+                uint8_t mode = (rx_buffer[1] >> 4) & 0x0F;
+                uint8_t color = rx_buffer[1] & 0x0F;
+                currentMode = (mode == 1) ? MODE_PHYSICAL : MODE_UI;
+                playerColor = (color == 1) ? Black : White;
+                currentTurn = White;  // White always starts
+                selectedRow = selectedCol = -1;
 
+                printf("Game mode: %s, Player color: %s\n",
+                       currentMode == MODE_PHYSICAL ? "Physical" : "UI",
+                       playerColor == White ? "White" : "Black");
+
+                // Reset board to starting position
+                board = ChessBoard(8, 8);
+                setupStandardBoard(board);
+
+                // Send initial board state
+                serializeBoardState(board, tx_buffer);
+                i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 33, pdMS_TO_TICKS(100));
+                printf("Sent initial board state (33 bytes)\n");
+            }
+            // Handle AA - Piece selection
+            else if (rx_buffer[0] == 0xAA && bytes_read >= 2) {
+                int row = (rx_buffer[1] >> 4) & 0x0F;
+                int col = rx_buffer[1] & 0x0F;
+                selectedRow = row;
+                selectedCol = col;
+
+                ChessPiece* piece = board.getPiece(row, col);
+                printf("Selection: row=%d, col=%d, piece=%s\n", row, col,
+                       piece ? (piece->getColor() == White ? "White" : "Black") : "empty");
+
+                // TODO: Send possible moves (32 bytes, no header) - integrate later
+                // serializePossibleMoves(board, row, col, tx_buffer);
+                // i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 32, pdMS_TO_TICKS(100));
+
+                // Print move count for debugging
+                auto moves = board.getPossibleMoves(row, col);
+                printf("Possible moves: %d (not sent yet)\n", (int)moves.size());
+            }
+            // Handle FF - Move execution
+            else if (rx_buffer[0] == 0xFF && bytes_read >= 2) {
+                int toRow = (rx_buffer[1] >> 4) & 0x0F;
+                int toCol = rx_buffer[1] & 0x0F;
+                printf("Move request: (%d,%d) -> (%d,%d)\n", selectedRow, selectedCol, toRow, toCol);
+
+                bool moveSuccess = false;
+                if (selectedRow >= 0 && selectedCol >= 0) {
+                    board.setTurn(currentTurn);
+                    if (board.movePiece(selectedRow, selectedCol, toRow, toCol)) {
+                        printf("Move successful! %s moved from (%d,%d) to (%d,%d)\n",
+                               currentTurn == White ? "White" : "Black",
+                               selectedRow, selectedCol, toRow, toCol);
+                        moveSuccess = true;
+
+                        // PLACEHOLDER: Physical movement
+                        // In physical mode, would trigger motor movement here
+                        if (currentMode == MODE_PHYSICAL) {
+                            printf("PLACEHOLDER: Motor would move piece from (%d,%d) to (%d,%d)\n",
+                                   selectedRow, selectedCol, toRow, toCol);
+                        }
+
+                        currentTurn = (currentTurn == White) ? Black : White;
+                        printf("Turn changed to: %s\n", currentTurn == White ? "White" : "Black");
+
+                        // In UI mode, if it's AI's turn, make AI move
+                        if (currentMode == MODE_UI && currentTurn != playerColor) {
+                            printf("AI thinking (minimax depth 4)...\n");
+                            ChessAI ai;
+                            AIMove aiMove = ai.findBestMove(board, currentTurn, 4);
+                            if (aiMove.fromRow >= 0) {
+                                board.setTurn(currentTurn);
+                                board.movePiece(aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
+                                printf("AI moved: (%d,%d) -> (%d,%d), score=%.2f\n",
+                                       aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol, aiMove.score);
+
+                                // PLACEHOLDER: Physical movement for AI
+                                if (currentMode == MODE_PHYSICAL) {
+                                    printf("PLACEHOLDER: Motor would move AI piece\n");
+                                }
+
+                                currentTurn = (currentTurn == White) ? Black : White;
+                                printf("Turn changed to: %s\n", currentTurn == White ? "White" : "Black");
+                            } else {
+                                printf("AI has no valid moves!\n");
+                            }
+                        }
+                    } else {
+                        printf("Move failed - invalid move\n");
+                    }
+                } else {
+                    printf("Move failed - no piece selected\n");
+                }
+
+                selectedRow = selectedCol = -1;
+
+                // Send updated board state
+                serializeBoardState(board, tx_buffer);
+                i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 33, pdMS_TO_TICKS(100));
+                printf("Sent updated board state (33 bytes)\n");
+
+                // Print board to terminal for debugging
+                string boardStr = board.displayExpandedBoard().str();
+                printf("\n%s\n", boardStr.c_str());
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
 }
