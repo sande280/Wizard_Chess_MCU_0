@@ -1482,10 +1482,13 @@ void app_main(void) {
                 board = ChessBoard(8, 8);
                 setupStandardBoard(board);
 
-                // Send initial board state
-                serializeBoardState(board, tx_buffer);
-                i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 33, pdMS_TO_TICKS(100));
-                printf("Sent initial board state (33 bytes)\n");
+                // Only send initial board state for black player (UI reads for black, not white)
+                if (playerColor == Black) {
+                    i2c_reset_tx_fifo(I2C_SLAVE_PORT);  // Clear any stale data
+                    serializeBoardState(board, tx_buffer);
+                    i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 33, pdMS_TO_TICKS(100));
+                    printf("Sent initial board state for black player\n");
+                }
             }
             // Handle AA - Piece selection
             else if (rx_buffer[0] == 0xAA && bytes_read >= 2) {
@@ -1562,7 +1565,8 @@ void app_main(void) {
 
                 selectedRow = selectedCol = -1;
 
-                // Send updated board state
+                // Send updated board state (after AI move if applicable)
+                i2c_reset_tx_fifo(I2C_SLAVE_PORT);  // Clear any stale data
                 serializeBoardState(board, tx_buffer);
                 i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 33, pdMS_TO_TICKS(100));
                 printf("Sent updated board state (33 bytes)\n");
