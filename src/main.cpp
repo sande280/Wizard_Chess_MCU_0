@@ -42,20 +42,7 @@ static const char *TAG = "ESP_CHESS";
 #define RD_BUF_SIZE (BUF_SIZE)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// AHAHHHHHHHHHH
 static esp_timer_handle_t step_timer = nullptr;
 
 typedef struct {
@@ -64,13 +51,13 @@ typedef struct {
     int dirA, dirB;
     uint32_t leader_steps;
     uint32_t follower_steps;
-    int leader_id;
+    int leader_id; // 1=A, 2=B
     float step_period_us;
     int error_term;
     bool active;
 } move_state_t;
 
-static move_state_t move_ctx{0};
+static move_state_t move_ctx{};
 
 
 
@@ -1208,7 +1195,7 @@ static void IRAM_ATTR step_timer_cb(void* arg) {
                 }
             }
         }
-    } else {
+    } else { // B is leader
         if (move_ctx.sent_B < move_ctx.total_B) {
             pulse_step(STEP2_PIN);
             motors.B_pos += (move_ctx.dirB > 0 ? 1 : -1);
@@ -1225,15 +1212,15 @@ static void IRAM_ATTR step_timer_cb(void* arg) {
         }
     }
 
-
+    // stop when both complete
     if (move_ctx.sent_A >= move_ctx.total_A && move_ctx.sent_B >= move_ctx.total_B) {
         move_ctx.active = false;
         esp_timer_stop(step_timer);
         gantry.motion_active = false;
         gantry.position_reached = true;
     }
-
-
+    
+    // Update live XY coordinates
     gantry.x = (motors.A_pos + motors.B_pos) / (2.0f * STEPS_PER_MM);
     gantry.y = (motors.A_pos - motors.B_pos) / (2.0f * STEPS_PER_MM);
 
@@ -1250,12 +1237,25 @@ void gpio_output_init(gpio_num_t pin) {
     gpio_config(&cfg);
 }
 
+void gpio_input_init(gpio_num_t pin, gpio_int_type_t intr_type) {
+    gpio_config_t cfg = {
+        .pin_bit_mask = (1ULL << pin),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = intr_type
+    };
+    gpio_config(&cfg);
+}
+
 
 bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, bool magnet_on) {
+    
+    
+    gpio_set_level(MAGNET_PIN, magnet_on);
 
     if (speed_mm_s <= 0.0f) return false;
 
-    gpio_set_level(MAGNET_PIN, magnet_on);
 
     float dx = x_target_mm - gantry.x;
     float dy = y_target_mm - gantry.y;
@@ -1277,11 +1277,11 @@ bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, bool magne
     move_ctx.sent_A = move_ctx.sent_B = 0;
     move_ctx.error_term = 0;
 
-
+    // Set directions
     gpio_set_level(DIR1_PIN, move_ctx.dirA > 0 ? 1 : 0);
     gpio_set_level(DIR2_PIN, move_ctx.dirB > 0 ? 1 : 0);
 
-
+    // Determine leader/follower
     if (move_ctx.total_A >= move_ctx.total_B) {
         move_ctx.leader_id = 1;
         move_ctx.leader_steps = move_ctx.total_A;
@@ -1292,7 +1292,7 @@ bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, bool magne
         move_ctx.follower_steps = move_ctx.total_A;
     }
 
-
+    // step frequency based on leader
     float freq = move_ctx.leader_steps / time_s;
     move_ctx.step_period_us = 1e6 / freq;
 
@@ -1322,6 +1322,43 @@ bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, bool magne
     return true;
 }
 
+void moveDispatchTask(void *pvParameters) {
+    while (true) {
+        // If idle and there are queued moves, dispatch the next one
+        if (gantry.position_reached && !move_queue_is_empty()) {
+            MoveCommand next;
+            if (move_queue_pop(&next)) {
+                ESP_LOGI("MOVE", "Dispatching queued move to (%.2f, %.2f) speed=%.1f magnet=%d", next.x, next.y, next.speed, next.magnet ? 1 : 0);
+                moveToXY(next.x, next.y, next.speed, next.magnet);
+            }
+            else {
+                ESP_LOGI("INIT", "Pop failed unexpectedly");
+            }
+        }
+
+        if (gantry.position_reached) {
+            ESP_LOGI("MOVE", "Idle: position reached");
+        }
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}
+
+volatile bool limit_x_triggered = false;
+volatile bool limit_y_triggered = false;
+
+static void IRAM_ATTR limit_switch_isr_handler(void* arg) {
+    uint32_t gpio_num = (uint32_t) arg;
+    if (gpio_num == LIMIT_Y_PIN) {
+        limit_y_triggered = true;
+    } else if (gpio_num == LIMIT_X_PIN) {
+        limit_x_triggered = true;
+    }
+    // Stop motors immediately
+    move_ctx.active = false;
+    esp_timer_stop(step_timer);
+    gantry.motion_active = false;
+}
+
 
 extern "C" {
     void app_main(void);
@@ -1336,6 +1373,7 @@ void app_main(void) {
     gpio_output_init(STEP1_PIN);
     gpio_output_init(STEP2_PIN);
     gpio_output_init(DIR1_PIN);
+    gpio_output_init(MAGNET_PIN);
     gpio_output_init(DIR2_PIN);
     gpio_output_init(SLEEP_PIN);
     gpio_output_init(EN_PIN);
@@ -1343,6 +1381,13 @@ void app_main(void) {
     gpio_output_init(MODE0_PIN);
     gpio_output_init(MODE1_PIN);
     gpio_output_init(MODE2_PIN);
+    
+    gpio_input_init(LIMIT_Y_PIN, GPIO_INTR_NEGEDGE);
+    gpio_input_init(LIMIT_X_PIN, GPIO_INTR_NEGEDGE);
+
+    gpio_install_isr_service(0);
+    gpio_isr_handler_add(LIMIT_Y_PIN, limit_switch_isr_handler, (void*) LIMIT_Y_PIN);
+    gpio_isr_handler_add(LIMIT_X_PIN, limit_switch_isr_handler, (void*) LIMIT_X_PIN);
 
     gpio_set_level(SLEEP_PIN, 1);
     gpio_set_level(EN_PIN, 1);
@@ -1350,159 +1395,35 @@ void app_main(void) {
     gpio_set_level(MODE0_PIN, 0);
     gpio_set_level(MODE1_PIN, 0);
     gpio_set_level(MODE2_PIN, 1);
-
+    
     setupMotion();
     vTaskDelay(pdMS_TO_TICKS(2000));
-    */
-    ESP_LOGI("INIT", "Hardware Startup done (motor GPIO disabled for testing)");
+    ESP_LOGI("INIT", "Hardware Startup done");
 
-    // I2C slave init
-    i2c_slave_init();
-    ESP_LOGI("I2C", "I2C slave initialized at address 0x%02X", I2C_SLAVE_ADDRESS);
+    uart_config_t uart_config = {};
+    uart_config.baud_rate = 9600;
+    uart_config.data_bits = UART_DATA_8_BITS;
+    uart_config.parity = UART_PARITY_DISABLE;
+    uart_config.stop_bits = UART_STOP_BITS_1;
+    uart_config.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
+    uart_config.rx_flow_ctrl_thresh = 0;
+    uart_config.source_clk = UART_SCLK_DEFAULT;
 
-    // Initialize chess board
-    ChessBoard board(8, 8);
-    setupStandardBoard(board);
-    ESP_LOGI("CHESS", "Chess board initialized");
+    ESP_ERROR_CHECK(uart_driver_install(UART_NUM, BUF_SIZE * 2, 0, 0, NULL, 0));
+    ESP_ERROR_CHECK(uart_param_config(UART_NUM, &uart_config));
+    ESP_ERROR_CHECK(uart_set_pin(UART_NUM, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE,
+                                  UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
-    uint8_t rx_buffer[I2C_RX_BUF_LEN];
-    uint8_t tx_buffer[64];  // For responses
-    static uint8_t i2c_starter[3] = {0x1A, 0x2B, 0x3C};
+    xTaskCreate(chess_game_task, "chess_game", 8192, NULL, 10, NULL);
 
-    // Piece encoding reference:
-    // 0=empty, 1-6=black (pawn,bishop,knight,rook,queen,king), 7-C=white
 
-    while (1) {
-        int bytes_read = i2c_slave_read_buffer(I2C_SLAVE_PORT, rx_buffer, sizeof(rx_buffer), pdMS_TO_TICKS(10));
 
-        if (bytes_read > 0) {
-            // Print received bytes for debugging
-            printf("RX: ");
-            for (int i = 0; i < bytes_read; i++) {
-                printf("%02X ", rx_buffer[i]);
-            }
-            printf("\n");
 
-            // Handle A1 B2 C3 handshake
-            if (bytes_read >= 3 && rx_buffer[0] == 0xA1 && rx_buffer[1] == 0xB2 && rx_buffer[2] == 0xC3) {
-                printf("Handshake received - responding with 1A 2B 3C\n");
-                i2c_slave_write_buffer(I2C_SLAVE_PORT, i2c_starter, sizeof(i2c_starter), pdMS_TO_TICKS(100));
-            }
-            // Handle 3D - Game mode setup
-            else if (rx_buffer[0] == 0x3D && bytes_read >= 2) {
-                uint8_t mode = (rx_buffer[1] >> 4) & 0x0F;
-                uint8_t color = rx_buffer[1] & 0x0F;
-                currentMode = (mode == 1) ? MODE_PHYSICAL : MODE_UI;
-                playerColor = (color == 1) ? Black : White;
-                currentTurn = White;  // White always starts
-                selectedRow = selectedCol = -1;
 
-                printf("Game mode: %s, Player color: %s\n",
-                       currentMode == MODE_PHYSICAL ? "Physical" : "UI",
-                       playerColor == White ? "White" : "Black");
 
-                // Reset board to starting position
-                board = ChessBoard(8, 8);
-                setupStandardBoard(board);
 
-                // Only send initial board state for black player (UI reads for black, not white)
-                if (playerColor == Black) {
-                    serializeBoardState(board, tx_buffer);
-                    i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 33, pdMS_TO_TICKS(100));
-                    printf("Sent initial board state for black player\n");
-                }
-            }
-            // Handle AA - Piece selection
-            else if (rx_buffer[0] == 0xAA && bytes_read >= 2) {
-                int row = (rx_buffer[1] >> 4) & 0x0F;
-                int col = rx_buffer[1] & 0x0F;
-                selectedRow = row;
-                selectedCol = col;
 
-                ChessPiece* piece = board.getPiece(row, col);
-                printf("Selection: row=%d, col=%d, piece=%s\n", row, col,
-                       piece ? (piece->getColor() == White ? "White" : "Black") : "empty");
 
-                // TODO: Send possible moves (32 bytes, no header) - integrate later
-                // serializePossibleMoves(board, row, col, tx_buffer);
-                // i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 32, pdMS_TO_TICKS(100));
 
-                // Print move count for debugging
-                auto moves = board.getPossibleMoves(row, col);
-                printf("Possible moves: %d (not sent yet)\n", (int)moves.size());
-            }
-            // Handle FF - Move execution
-            else if (rx_buffer[0] == 0xFF && bytes_read >= 2) {
-                int toRow = (rx_buffer[1] >> 4) & 0x0F;
-                int toCol = rx_buffer[1] & 0x0F;
-                printf("Move request: (%d,%d) -> (%d,%d)\n", selectedRow, selectedCol, toRow, toCol);
 
-                bool moveSuccess = false;
-                if (selectedRow >= 0 && selectedCol >= 0) {
-                    board.setTurn(currentTurn);
-                    if (board.movePiece(selectedRow, selectedCol, toRow, toCol)) {
-                        printf("Move successful! %s moved from (%d,%d) to (%d,%d)\n",
-                               currentTurn == White ? "White" : "Black",
-                               selectedRow, selectedCol, toRow, toCol);
-                        moveSuccess = true;
-
-                        // PLACEHOLDER: Physical movement
-                        // In physical mode, would trigger motor movement here
-                        if (currentMode == MODE_PHYSICAL) {
-                            printf("PLACEHOLDER: Motor would move piece from (%d,%d) to (%d,%d)\n",
-                                   selectedRow, selectedCol, toRow, toCol);
-                        }
-
-                        currentTurn = (currentTurn == White) ? Black : White;
-                        printf("Turn changed to: %s\n", currentTurn == White ? "White" : "Black");
-
-                        // Send board state after user move (UI reads immediately after FF)
-                        serializeBoardState(board, tx_buffer);
-                        i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 33, pdMS_TO_TICKS(100));
-                        printf("Sent board state after user move\n");
-
-                        // In UI mode, if it's AI's turn, make AI move
-                        if (currentMode == MODE_UI && currentTurn != playerColor) {
-                            printf("AI thinking (minimax depth 4)...\n");
-                            ChessAI ai;
-                            AIMove aiMove = ai.findBestMove(board, currentTurn, 4);
-                            if (aiMove.fromRow >= 0) {
-                                board.setTurn(currentTurn);
-                                board.movePiece(aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
-                                printf("AI moved: (%d,%d) -> (%d,%d), score=%.2f\n",
-                                       aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol, aiMove.score);
-
-                                // PLACEHOLDER: Physical movement for AI
-                                if (currentMode == MODE_PHYSICAL) {
-                                    printf("PLACEHOLDER: Motor would move AI piece\n");
-                                }
-
-                                currentTurn = (currentTurn == White) ? Black : White;
-                                printf("Turn changed to: %s\n", currentTurn == White ? "White" : "Black");
-                            } else {
-                                printf("AI has no valid moves!\n");
-                            }
-                        }
-                    } else {
-                        printf("Move failed - invalid move\n");
-                    }
-                } else {
-                    printf("Move failed - no piece selected\n");
-                }
-
-                selectedRow = selectedCol = -1;
-
-                // Send updated board state
-                serializeBoardState(board, tx_buffer);
-                i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 33, pdMS_TO_TICKS(100));
-                printf("Sent updated board state (33 bytes)\n");
-
-                // Print board to terminal for debugging
-                string boardStr = board.displayExpandedBoard().str();
-                printf("\n%s\n", boardStr.c_str());
-            }
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
 }
