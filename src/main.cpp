@@ -30,6 +30,9 @@
 #include "move_queue.h"
 #include "motionPos.h"
 #include <PinDefs.h>
+#include "step_timer.h"
+
+esp_timer_handle_t step_timer = nullptr;
 
 using namespace Student;
 using namespace std;
@@ -43,20 +46,6 @@ static const char *TAG = "ESP_CHESS";
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-// AHAHHHHHHHHHH
-static esp_timer_handle_t step_timer = nullptr;
 
 typedef struct {
     uint32_t total_A, total_B;
@@ -1430,7 +1419,7 @@ void app_main(void) {
     ESP_LOGI("INIT", "Gantry motion and position status: active=%d reached=%d", gantry.motion_active ? 1 : 0, gantry.position_reached ? 1 : 0);
 
     if (homeOK != -1) {
-        xTaskCreate(moveDispatchTask, "MoveDispatch", 4096, NULL, 5, NULL);
+        xTaskCreate(moveDispatchTask, "MoveDispatch", 8192, NULL, 10, NULL);
     }
 
     // I2C slave init
