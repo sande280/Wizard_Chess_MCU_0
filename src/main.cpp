@@ -18,6 +18,7 @@
 #include "driver/ledc.h"
 #include "esp_timer.h"
 #include "driver/i2c.h"
+#include "esp_task_wdt.h"
 
 #include "Chess.h"
 #include "ChessBoard.hh"
@@ -1329,7 +1330,9 @@ extern "C" {
 void app_main(void) {
     ESP_LOGI(TAG, "Starting ESP32 Chess Game with I2C UI Integration");
 
-    // GPIO init for motors
+    // TODO: Motor GPIO init disabled for I2C testing
+    // GPIO0 is a boot strapping pin and may cause issues
+    /*
     gpio_output_init(STEP1_PIN);
     gpio_output_init(STEP2_PIN);
     gpio_output_init(DIR1_PIN);
@@ -1350,7 +1353,8 @@ void app_main(void) {
 
     setupMotion();
     vTaskDelay(pdMS_TO_TICKS(2000));
-    ESP_LOGI("INIT", "Hardware Startup done");
+    */
+    ESP_LOGI("INIT", "Hardware Startup done (motor GPIO disabled for testing)");
 
     // I2C slave init
     i2c_slave_init();
@@ -1401,10 +1405,12 @@ void app_main(void) {
                 board = ChessBoard(8, 8);
                 setupStandardBoard(board);
 
-                // Send initial board state
-                serializeBoardState(board, tx_buffer);
-                i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 33, pdMS_TO_TICKS(100));
-                printf("Sent initial board state (33 bytes)\n");
+                // Only send initial board state for black player (UI reads for black, not white)
+                if (playerColor == Black) {
+                    serializeBoardState(board, tx_buffer);
+                    i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 33, pdMS_TO_TICKS(100));
+                    printf("Sent initial board state for black player\n");
+                }
             }
             // Handle AA - Piece selection
             else if (rx_buffer[0] == 0xAA && bytes_read >= 2) {
@@ -1449,6 +1455,11 @@ void app_main(void) {
 
                         currentTurn = (currentTurn == White) ? Black : White;
                         printf("Turn changed to: %s\n", currentTurn == White ? "White" : "Black");
+
+                        // Send board state after user move (UI reads immediately after FF)
+                        serializeBoardState(board, tx_buffer);
+                        i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 33, pdMS_TO_TICKS(100));
+                        printf("Sent board state after user move\n");
 
                         // In UI mode, if it's AI's turn, make AI move
                         if (currentMode == MODE_UI && currentTurn != playerColor) {
