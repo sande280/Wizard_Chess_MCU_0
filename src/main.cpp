@@ -1411,9 +1411,9 @@ void app_main(void) {
     }
 
     // movement tests
-    plan_move(0, 0, 5, 3, true);
-    plan_move(5, 3, 6, 4, true);
-    plan_move(6, 4, 0, 0, false);
+    plan_move(0, 0, 11, 0, true);
+    plan_move(11, 0, 0, 0, true);
+    plan_move(11, 7, 0, 0, true);
 
     ESP_LOGI("INIT", "Gantry motion and position status: active=%d reached=%d", gantry.motion_active ? 1 : 0, gantry.position_reached ? 1 : 0);
 

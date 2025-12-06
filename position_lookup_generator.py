@@ -1,5 +1,5 @@
 # board_lookup_gen.py
-xo = 5  # mm offset for X
+xo = 0  # mm offset for X
 yo = 20  # mm offset for Y
 
 # Define X coordinates for 12 columns (center positions)
