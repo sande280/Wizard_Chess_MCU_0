@@ -155,6 +155,14 @@ void reed::scan_task()
     }
 }
 
+bool reed::isPopulated(uint8_t row, uint8_t col)
+{
+    if (row >= 12 || col >= 8) {
+        return false;  // Out of bounds
+    }
+    return (grid[row] & (1 << col)) != 0;
+}
+
 bool reed::wait_for_col(uint8_t row, uint8_t col)
 {
     while (1)

@@ -1,3 +1,5 @@
+#include <cstdint>
+
 const float PULLEY_TEETH   = 20.0f;
 const float BELT_PITCH_MM  = 2.0f;
 const float STEP_ANGLE_DEG = 1.8f;
