@@ -356,10 +356,10 @@ void yeet_piece(int A_from, int B_from) {
     float board_center_x = 409.180f / 2.0f;
     if (fromX < board_center_x) {
         //yeet left
-        mc = {0, fromY, 250.0f, 0.0f, true};
+        mc = {408.0f, fromY, 250.0f, 0.0f, true};
     } else {
         //yeet right
-        mc = { 408.0f, fromY, 250.0f, 0.0f, true};
+        mc = { 0.0f, fromY, 250.0f, 0.0f, true};
     }
     move_queue_push(&mc);
     while (!gantry.position_reached) {
