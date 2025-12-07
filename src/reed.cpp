@@ -63,17 +63,28 @@ void reed::init_pcal()
     ESP_LOGI(TAG, "PCAL Configured");
 }
 
-void reed::write_reg(uint8_t reg, uint8_t val)
+esp_err_t reed::write_reg(uint8_t reg, uint8_t val)
 {
     uint8_t write_buf[2] = {reg, val};
-    ESP_ERROR_CHECK(i2c_master_write_to_device(I2C_NUM, PCAL6524_ADDR, write_buf, sizeof(write_buf), I2C_TIMEOUT_MS / portTICK_PERIOD_MS));
+    esp_err_t ret = i2c_master_write_to_device(I2C_NUM, PCAL6524_ADDR, write_buf, sizeof(write_buf), I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
+
+    if(ret != ESP_OK)
+    {
+        ESP_LOGI(TAG, "Write failed to PCAL6524");
+        return ESP_FAIL;
+    }
+    return ESP_OK;
 }
 
 uint8_t reed::read_reg(uint8_t reg)
 {
     uint8_t data = 0;
-    ESP_ERROR_CHECK(i2c_master_write_read_device(I2C_NUM, PCAL6524_ADDR, &reg, 1, &data, 1, I2C_TIMEOUT_MS / portTICK_PERIOD_MS));
+    esp_err_t ret = i2c_master_write_read_device(I2C_NUM, PCAL6524_ADDR, &reg, 1, &data, 1, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
 
+    if (ret != ESP_OK) {
+        // Return 0 so logic sees "no buttons pressed"
+        return 0; 
+    }
     return data;
 }
 
@@ -87,6 +98,10 @@ void reed::read_matrix()
 
         uint8_t col_data = read_reg(REG_INPUT_P0);
 
+        col_data = (col_data & 0xF0) >> 4 | (col_data & 0x0F) << 4;
+        col_data = (col_data & 0xCC) >> 2 | (col_data & 0x33) << 2;
+        col_data = (col_data & 0xAA) >> 1 | (col_data & 0x55) << 1;
+
         grid[row] = col_data;
 
         write_reg(REG_OUTPUT_P1, 0x00);
@@ -99,6 +114,10 @@ void reed::read_matrix()
         vTaskDelay(pdMS_TO_TICKS(5));
 
         uint8_t col_data = read_reg(REG_INPUT_P0);
+
+        col_data = (col_data & 0xF0) >> 4 | (col_data & 0x0F) << 4;
+        col_data = (col_data & 0xCC) >> 2 | (col_data & 0x33) << 2;
+        col_data = (col_data & 0xAA) >> 1 | (col_data & 0x55) << 1;
 
         grid[row+8] = col_data;
 
@@ -164,37 +183,4 @@ bool reed::wait_for_col(uint8_t row, uint8_t col)
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-}
-
-bool reed::isPopulated(uint8_t row, uint8_t col)
-{
-    int i = 0;
-    while (i < 10)
-    {
-        uint8_t col_data = 0;
-        if (row < 8)
-        {
-            uint8_t row_mask = 1 << row;
-            write_reg(REG_OUTPUT_P1, row_mask);
-            vTaskDelay(pdMS_TO_TICKS(5));
-            col_data = read_reg(REG_INPUT_P0);
-            write_reg(REG_OUTPUT_P1, 0x00);
-        }
-        else
-        {
-            uint8_t row_mask = 1 << (row - 8);
-            write_reg(REG_OUTPUT_P2, row_mask);
-            vTaskDelay(pdMS_TO_TICKS(5));
-            col_data = read_reg(REG_INPUT_P0);
-            write_reg(REG_OUTPUT_P2, 0x00);
-        }
-
-        if (col_data & (1 << col))
-        {
-            return true;
-        }
-        vTaskDelay(pdMS_TO_TICKS(10));
-        i++;
-    }
-    return false;
 }
