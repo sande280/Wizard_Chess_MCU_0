@@ -1,3 +1,4 @@
+// General Includes
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
@@ -19,6 +20,7 @@
 #include "esp_timer.h"
 #include "driver/i2c.h"
 
+//Chess Includes (Jackson)
 #include "Chess.h"
 #include "ChessBoard.hh"
 #include "ChessPiece.hh"
@@ -27,10 +29,13 @@
 #include "PathAnalyzer.hh"
 #include "ChessAI.hh"
 
+//Movement Includes (Jack)
 #include "move_queue.h"
 #include "motionPos.h"
 #include <PinDefs.h>
 #include "step_timer.h"
+
+//Peripheral Includes (Brayden)
 
 esp_timer_handle_t step_timer = nullptr;
 
