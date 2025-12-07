@@ -121,6 +121,17 @@ void reed::scan_task()
         {
             //ESP_LOGI(TAG, "Row %d: 0x%02X", i, grid[i]);
         }
+
+        //Junk Code
+        if(grid[0] & 0x01)
+        {
+            led->update_led(0,0,255,0,0);
+        }
+        else
+        {
+            led->update_led(0,0,0,255,0);
+        }
+        led->refresh();
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
