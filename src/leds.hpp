@@ -41,3 +41,5 @@ public:
     void update_led(uint8_t x, uint8_t y, uint8_t r, uint8_t g, uint8_t b);
 
 };
+
+leds* led;

@@ -97,3 +97,5 @@ public:
     void set_mute(bool mute);
 
 };
+
+audio* speaker;

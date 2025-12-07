@@ -61,3 +61,5 @@ public:
     bool wait_for_col(uint8_t row, uint8_t col);
     uint8_t grid[12];
 };
+
+reed* switches;

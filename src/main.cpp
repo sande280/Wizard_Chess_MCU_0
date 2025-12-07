@@ -42,10 +42,6 @@
 
 esp_timer_handle_t step_timer = nullptr;
 
-reed* switches = nullptr;
-leds* led = nullptr;
-audio* speaker = nullptr;
-
 using namespace Student;
 using namespace std;
 
