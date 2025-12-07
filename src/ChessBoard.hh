@@ -45,6 +45,8 @@ namespace Student
         void setTurn(Color color) { turn = color; }
         Color getTurn() const { return turn; }
         bool isPieceUnderThreat(int row, int column);
+        bool isSquareAttacked(int row, int col, Color attacker);
+        bool isEnPassantTarget(int row, int col) const;
         std::ostringstream displayBoard();
         std::ostringstream displayExpandedBoard();
         float scoreBoard();

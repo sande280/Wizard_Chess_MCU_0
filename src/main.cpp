@@ -167,6 +167,24 @@ string colorToString(Color color) {
     return (color == White) ? "White" : "Black";
 }
 
+// Detect if move is castling (king moves 2 squares horizontally)
+bool isCastlingMove(ChessBoard& board, int fromRow, int fromCol, int toRow, int toCol) {
+    ChessPiece* piece = board.getPiece(fromRow, fromCol);
+    if (!piece || piece->getType() != King) return false;
+    return (fromRow == toRow && std::abs(toCol - fromCol) == 2);
+}
+
+// Detect if move is en passant (pawn diagonal to empty square at enP position)
+bool isEnPassantMove(ChessBoard& board, int fromRow, int fromCol, int toRow, int toCol) {
+    ChessPiece* piece = board.getPiece(fromRow, fromCol);
+    if (!piece || piece->getType() != Pawn) return false;
+    // Diagonal move to empty square
+    if (board.getPiece(toRow, toCol) != nullptr) return false;
+    if (std::abs(toCol - fromCol) != 1) return false;
+    // Check if matches en passant target
+    return board.isEnPassantTarget(toRow, toCol);
+}
+
 int translateColumn(int displayCol) {
     if (displayCol < 2 || displayCol > 9) {
         return -1;
@@ -591,9 +609,9 @@ void uart_printf(const char* format, ...) {
     uart_write_bytes(UART_NUM, buffer, strlen(buffer));
 }
 
-#define I2C_SLAVE_SDA_IO        10
-#define I2C_SLAVE_SCL_IO        11
-#define I2C_SLAVE_PORT          I2C_NUM_0
+#define I2C_SLAVE_SDA_IO        39
+#define I2C_SLAVE_SCL_IO        40
+#define I2C_SLAVE_PORT          I2C_NUM_1
 #define I2C_SLAVE_ADDRESS       0x67
 #define I2C_RX_BUF_LEN          256
 #define I2C_TX_BUF_LEN          256
@@ -604,6 +622,34 @@ static GameMode currentMode = MODE_NONE;
 static Color playerColor = White;  // Human player's color
 static Color currentTurn = White;
 static int selectedRow = -1, selectedCol = -1;
+
+// Previous reed switch state for detecting physical piece pickup
+static uint8_t prevReedGrid[12] = {0};
+static bool reedGridInitialized = false;
+
+// Flag to signal AI should make a move
+static volatile bool aiMoveRequested = false;
+
+// Capture zone slot tracking
+static int capturedWhiteCount = 0;  // White pieces captured, go to rows 10-11
+static int capturedBlackCount = 0;  // Black pieces captured, go to rows 0-1
+
+// Get next available capture zone slot for a captured piece
+std::pair<int, int> getNextCaptureSlot(Color capturedPieceColor) {
+    if (capturedPieceColor == White) {
+        // White pieces go to rows 10-11
+        int slot = capturedWhiteCount++;
+        int row = 10 + (slot / 8);  // Row 10, then 11
+        int col = slot % 8;
+        return {row, col};
+    } else {
+        // Black pieces go to rows 0-1
+        int slot = capturedBlackCount++;
+        int row = slot / 8;  // Row 0, then 1
+        int col = slot % 8;
+        return {row, col};
+    }
+}
 
 static void i2c_slave_init(void)
 {
@@ -647,6 +693,46 @@ void serializeBoardState(ChessBoard& board, uint8_t* buffer) {
     }
 }
 
+// Serialize board state with game-over preamble (0x2F instead of 0xAA)
+void serializeBoardStateGameOver(ChessBoard& board, uint8_t* buffer) {
+    buffer[0] = 0x2F;  // Game-over header
+    for (int i = 0; i < 32; i++) {
+        int idx = i * 2;
+        int row1 = idx / 8, col1 = idx % 8;
+        int row2 = (idx + 1) / 8, col2 = (idx + 1) % 8;
+        uint8_t high = pieceToNibble(board.getPiece(row1, col1));
+        uint8_t low = pieceToNibble(board.getPiece(row2, col2));
+        buffer[1 + i] = (high << 4) | low;
+    }
+}
+
+// Serialize board state flipped for black player perspective (0xAA header + 32 bytes)
+// Row 7 becomes row 0, row 6 becomes row 1, etc. Same for columns.
+void serializeBoardStateFlipped(ChessBoard& board, uint8_t* buffer) {
+    buffer[0] = 0xAA;  // Header
+    for (int i = 0; i < 32; i++) {
+        int idx = i * 2;
+        int row1 = 7 - (idx / 8), col1 = 7 - (idx % 8);
+        int row2 = 7 - ((idx + 1) / 8), col2 = 7 - ((idx + 1) % 8);
+        uint8_t high = pieceToNibble(board.getPiece(row1, col1));
+        uint8_t low = pieceToNibble(board.getPiece(row2, col2));
+        buffer[1 + i] = (high << 4) | low;
+    }
+}
+
+// Serialize board state flipped with game-over preamble (0x2F header)
+void serializeBoardStateFlippedGameOver(ChessBoard& board, uint8_t* buffer) {
+    buffer[0] = 0x2F;  // Game-over header
+    for (int i = 0; i < 32; i++) {
+        int idx = i * 2;
+        int row1 = 7 - (idx / 8), col1 = 7 - (idx % 8);
+        int row2 = 7 - ((idx + 1) / 8), col2 = 7 - ((idx + 1) % 8);
+        uint8_t high = pieceToNibble(board.getPiece(row1, col1));
+        uint8_t low = pieceToNibble(board.getPiece(row2, col2));
+        buffer[1 + i] = (high << 4) | low;
+    }
+}
+
 // Serialize possible moves to 33-byte buffer (0xDD header + 32 bytes bitmap)
 // Each nibble: 0xF = valid move destination, 0x0 = not valid
 // Order: Row 0 first (squares 0-7), then Row 1, etc.
@@ -656,6 +742,26 @@ void serializePossibleMoves(ChessBoard& board, int row, int col, uint8_t* buffer
     auto moves = board.getPossibleMoves(row, col);
     for (auto& move : moves) {
         int index = move.first * 8 + move.second;  // 0-63
+        int byteIndex = index / 2;
+        if (index % 2 == 0) {
+            buffer[1 + byteIndex] |= 0xF0;  // High nibble
+        } else {
+            buffer[1 + byteIndex] |= 0x0F;  // Low nibble
+        }
+    }
+}
+
+// Serialize possible moves flipped for black player perspective
+// Positions are flipped so they appear correct from black's viewpoint
+void serializePossibleMovesFlipped(ChessBoard& board, int row, int col, uint8_t* buffer) {
+    buffer[0] = 0xDD;  // Possible moves header
+    memset(buffer + 1, 0, 32);  // Clear data bytes
+    auto moves = board.getPossibleMoves(row, col);
+    for (auto& move : moves) {
+        // Flip the position for black's perspective
+        int flippedRow = 7 - move.first;
+        int flippedCol = 7 - move.second;
+        int index = flippedRow * 8 + flippedCol;  // 0-63
         int byteIndex = index / 2;
         if (index % 2 == 0) {
             buffer[1 + byteIndex] |= 0xF0;  // High nibble
@@ -1382,6 +1488,312 @@ static void IRAM_ATTR limit_switch_isr_handler(void* arg) {
     gantry.motion_active = false;
 }
 
+// Task to detect physical piece pickup via reed switches and show possible moves on LEDs
+void piecePickupDetectionTask(void *pvParameter) {
+    ChessBoard* boardPtr = (ChessBoard*)pvParameter;
+
+    // Wait for initial reed switch scan to populate grid
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    while (1) {
+        // Read current reed switch state
+        switches->read_matrix();
+
+        // Initialize previous state on first run
+        if (!reedGridInitialized) {
+            memcpy(prevReedGrid, switches->grid, 12);
+            reedGridInitialized = true;
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
+
+        // Only process in physical mode when no piece is already selected
+        if (currentMode == MODE_PHYSICAL && selectedRow < 0) {
+            // Check main board area (physical rows 2-9 = chess rows 0-7)
+            for (int physRow = 2; physRow < 10; physRow++) {
+                int chessRow = physRow - 2;
+                uint8_t prev = prevReedGrid[physRow];
+                uint8_t curr = switches->grid[physRow];
+
+                // Detect piece lifted: was present (1), now absent (0)
+                uint8_t lifted = prev & ~curr;
+
+                if (lifted) {
+                    for (int col = 0; col < 8; col++) {
+                        if (lifted & (1 << col)) {
+                            printf("Physical pickup detected at (%d, %d)\n", chessRow, col);
+
+                            // Verify it's the current player's piece
+                            ChessPiece* piece = boardPtr->getPiece(chessRow, col);
+                            if (piece && piece->getColor() == currentTurn) {
+                                auto moves = boardPtr->getPossibleMoves(chessRow, col);
+
+                                if (led != nullptr && !moves.empty()) {
+                                    led->showPossibleMoves(moves);
+                                }
+
+                                selectedRow = chessRow;
+                                selectedCol = col;
+                                printf("Selected piece for physical move\n");
+                            }
+                        }
+                    }
+                }
+
+                // Detect piece placed: was absent (0), now present (1)
+                uint8_t placed = ~prev & curr;
+
+                if (placed && selectedRow >= 0) {
+                    for (int col = 0; col < 8; col++) {
+                        if (placed & (1 << col)) {
+                            int destRow = chessRow;
+                            int destCol = col;
+
+                            printf("Physical placement detected at (%d, %d)\n", destRow, destCol);
+
+                            if (led != nullptr) {
+                                led->clearPossibleMoves();
+                            }
+
+                            boardPtr->setTurn(currentTurn);
+                            if (boardPtr->movePiece(selectedRow, selectedCol, destRow, destCol)) {
+                                printf("Physical move successful: (%d,%d) -> (%d,%d)\n",
+                                       selectedRow, selectedCol, destRow, destCol);
+                                currentTurn = (currentTurn == White) ? Black : White;
+
+                                // Signal AI to respond if it's now computer's turn
+                                if (currentTurn != playerColor) {
+                                    aiMoveRequested = true;
+                                    printf("AI move requested\n");
+                                }
+                            } else {
+                                printf("Physical move invalid - piece returned?\n");
+                            }
+
+                            selectedRow = selectedCol = -1;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Detect capture zone placements (for tracking where user places captured pieces)
+        // Check capture zones: rows 0-1 (black captures) and 10-11 (white captures)
+        for (int physRow = 0; physRow < 2; physRow++) {
+            uint8_t prev = prevReedGrid[physRow];
+            uint8_t curr = switches->grid[physRow];
+            uint8_t placed = ~prev & curr;
+            if (placed) {
+                for (int col = 0; col < 8; col++) {
+                    if (placed & (1 << col)) {
+                        printf("Captured piece placed at black zone (%d, %d)\n", physRow, col);
+                        capturedBlackCount++;
+                    }
+                }
+            }
+        }
+        for (int physRow = 10; physRow < 12; physRow++) {
+            uint8_t prev = prevReedGrid[physRow];
+            uint8_t curr = switches->grid[physRow];
+            uint8_t placed = ~prev & curr;
+            if (placed) {
+                for (int col = 0; col < 8; col++) {
+                    if (placed & (1 << col)) {
+                        printf("Captured piece placed at white zone (%d, %d)\n", physRow, col);
+                        capturedWhiteCount++;
+                    }
+                }
+            }
+        }
+
+        // Update previous state
+        memcpy(prevReedGrid, switches->grid, 12);
+
+        vTaskDelay(pdMS_TO_TICKS(100));  // 100ms scan interval
+    }
+}
+
+// Task to handle AI response moves in physical mode
+void aiResponseTask(void *pvParameter) {
+    ChessBoard* boardPtr = (ChessBoard*)pvParameter;
+
+    while (1) {
+        // Check if AI should make a move
+        if (currentMode == MODE_PHYSICAL && aiMoveRequested && currentTurn != playerColor) {
+            aiMoveRequested = false;
+
+            printf("AI calculating move...\n");
+
+            // Use ChessAI to find best move
+            ChessAI ai;
+            boardPtr->setTurn(currentTurn);
+            AIMove aiMove = ai.findBestMove(*boardPtr, currentTurn, 3);
+
+            if (aiMove.fromRow < 0) {
+                printf("AI has no valid moves - game over?\n");
+                vTaskDelay(pdMS_TO_TICKS(100));
+                continue;
+            }
+
+            printf("AI move: (%d,%d) -> (%d,%d)\n",
+                   aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
+
+            // Convert chess coords to physical coords (chess row 0-7 -> physical row 2-9)
+            int physFromRow = aiMove.fromRow + 2;
+            int physToRow = aiMove.toRow + 2;
+
+            // Check for special moves BEFORE regular capture detection
+            bool isCastling = isCastlingMove(*boardPtr, aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
+            bool isEnPassant = isEnPassantMove(*boardPtr, aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
+
+            // Check if this is a regular capture move
+            ChessPiece* targetPiece = boardPtr->getPiece(aiMove.toRow, aiMove.toCol);
+            bool isCapture = (targetPiece != nullptr);
+
+            MoveVerifyResult result = VERIFY_SUCCESS;
+
+            if (isCastling) {
+                // CASTLING: Move king to temp square, then rook, then king to final
+                printf("AI: Executing castling move\n");
+                bool kingSide = (aiMove.toCol > aiMove.fromCol);
+                int rookSrcCol = kingSide ? 7 : 0;
+                int rookDestCol = kingSide ? (aiMove.toCol - 1) : (aiMove.toCol + 1);
+
+                // Use temp square one row toward center from king
+                int tempRow = physFromRow + 1;  // Row toward center
+                int tempCol = aiMove.fromCol;   // Same column
+
+                // Step 1: Move king to temp square
+                printf("AI Castle Step 1: King to temp (%d,%d)\n", tempRow, tempCol);
+                plan_move(physFromRow, aiMove.fromCol, tempRow, tempCol, true);
+                if (!wait_for_movement_complete(30000)) {
+                    printf("AI castling step 1 timed out\n");
+                    continue;
+                }
+
+                // Step 2: Move rook to final position
+                printf("AI Castle Step 2: Rook (%d,%d) to (%d,%d)\n", physFromRow, rookSrcCol, physFromRow, rookDestCol);
+                plan_move(physFromRow, rookSrcCol, physFromRow, rookDestCol, true);
+                if (!wait_for_movement_complete(30000)) {
+                    printf("AI castling step 2 timed out\n");
+                    continue;
+                }
+
+                // Step 3: Move king from temp to final position
+                printf("AI Castle Step 3: King temp to final (%d,%d)\n", physToRow, aiMove.toCol);
+                plan_move(tempRow, tempCol, physToRow, aiMove.toCol, true);
+                if (!wait_for_movement_complete(30000)) {
+                    printf("AI castling step 3 timed out\n");
+                    continue;
+                }
+
+                // Verify castling
+                result = verify_castling_move(physFromRow, aiMove.fromCol, aiMove.toCol, rookSrcCol, rookDestCol);
+
+            } else if (isEnPassant) {
+                // EN PASSANT: Captured pawn is at different location than destination
+                printf("AI: Executing en passant capture\n");
+                Color aiColor = boardPtr->getPiece(aiMove.fromRow, aiMove.fromCol)->getColor();
+                int capturedPawnRow = (aiColor == White) ? (aiMove.toRow + 1) : (aiMove.toRow - 1);
+                int physCapturedRow = capturedPawnRow + 2;
+                Color opponentColor = (aiColor == White) ? Black : White;
+
+                // Move captured pawn to capture zone
+                auto [capZoneRow, capZoneCol] = getNextCaptureSlot(opponentColor);
+                printf("AI: Moving en passant captured pawn from (%d,%d) to zone (%d,%d)\n",
+                       physCapturedRow, aiMove.toCol, capZoneRow, capZoneCol);
+                plan_move(physCapturedRow, aiMove.toCol, capZoneRow, capZoneCol, false);
+                if (!wait_for_movement_complete(30000)) {
+                    printf("AI en passant capture timed out\n");
+                    continue;
+                }
+
+                // Move attacking pawn to destination
+                plan_move(physFromRow, aiMove.fromCol, physToRow, aiMove.toCol, false);
+                if (!wait_for_movement_complete(30000)) {
+                    printf("AI en passant move timed out\n");
+                    continue;
+                }
+
+                result = verify_simple_move(physFromRow, aiMove.fromCol, physToRow, aiMove.toCol);
+
+            } else if (isCapture) {
+                // REGULAR CAPTURE
+                auto [capZoneRow, capZoneCol] = getNextCaptureSlot(targetPiece->getColor());
+
+                printf("AI: Moving captured %s piece to capture zone (%d, %d)\n",
+                       targetPiece->getColor() == White ? "white" : "black",
+                       capZoneRow, capZoneCol);
+
+                // Move captured piece from destination to capture zone
+                plan_move(physToRow, aiMove.toCol, capZoneRow, capZoneCol, false);
+
+                if (!wait_for_movement_complete(30000)) {
+                    printf("AI capture move timed out\n");
+                    continue;
+                }
+
+                // Verify capture zone placement
+                if (!switches->isPopulated(capZoneRow, capZoneCol)) {
+                    printf("Warning: Captured piece not detected in capture zone\n");
+                }
+
+                // Execute AI piece movement
+                plan_move(physFromRow, aiMove.fromCol, physToRow, aiMove.toCol, false);
+
+                if (!wait_for_movement_complete(30000)) {
+                    printf("AI move timed out\n");
+                    continue;
+                }
+
+                result = verify_simple_move(physFromRow, aiMove.fromCol, physToRow, aiMove.toCol);
+
+            } else {
+                // REGULAR MOVE (no capture)
+                plan_move(physFromRow, aiMove.fromCol, physToRow, aiMove.toCol, false);
+
+                if (!wait_for_movement_complete(30000)) {
+                    printf("AI move timed out\n");
+                    continue;
+                }
+
+                result = verify_simple_move(physFromRow, aiMove.fromCol, physToRow, aiMove.toCol);
+            }
+
+            if (result != VERIFY_SUCCESS) {
+                printf("AI move verification failed: %d\n", result);
+                // Could attempt correction here
+            }
+
+            // Update board state
+            boardPtr->setTurn(currentTurn);
+            boardPtr->movePiece(aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
+
+            // Check for game over
+            Color opponent = (currentTurn == White) ? Black : White;
+            if (boardPtr->isKingInCheck(opponent) && !boardPtr->hasValidMoves(opponent)) {
+                printf("Checkmate! %s wins!\n", (currentTurn == White) ? "White" : "Black");
+                // Send game-over to UI (flipped for black player)
+                uint8_t gameOverBuffer[33];
+                if (playerColor == Black) {
+                    serializeBoardStateFlippedGameOver(*boardPtr, gameOverBuffer);
+                } else {
+                    serializeBoardStateGameOver(*boardPtr, gameOverBuffer);
+                }
+                i2c_slave_write_buffer(I2C_SLAVE_PORT, gameOverBuffer, 33, pdMS_TO_TICKS(100));
+            }
+
+            // Flip turn back to human
+            currentTurn = (currentTurn == White) ? Black : White;
+            printf("Human's turn (%s)\n", (currentTurn == White) ? "White" : "Black");
+
+            // Re-sync reed grid after AI move
+            reedGridInitialized = false;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}
 
 extern "C" {
     void app_main(void);
@@ -1389,7 +1801,7 @@ extern "C" {
 
 void app_main(void) {
     ESP_LOGI(TAG, "Starting ESP32 Chess Game with I2C UI Integration");
-    /*
+
     led = new leds();
     led->init();
 
@@ -1411,7 +1823,7 @@ void app_main(void) {
     gpio_output_init(MODE0_PIN);
     gpio_output_init(MODE1_PIN);
     gpio_output_init(MODE2_PIN);
-    
+
     gpio_input_init(LIMIT_Y_PIN, GPIO_INTR_NEGEDGE);
     gpio_input_init(LIMIT_X_PIN, GPIO_INTR_NEGEDGE);
 
@@ -1425,7 +1837,7 @@ void app_main(void) {
     gpio_set_level(MODE0_PIN, 0);
     gpio_set_level(MODE1_PIN, 0);
     gpio_set_level(MODE2_PIN, 1);
-    
+
     setupMotion();
     vTaskDelay(pdMS_TO_TICKS(2000));
     ESP_LOGI("INIT", "Startup, beginning homing sequence.");
@@ -1443,8 +1855,7 @@ void app_main(void) {
 
     if (homeOK != -1) {
         xTaskCreate(moveDispatchTask, "MoveDispatch", 8192, NULL, 10, NULL);
-    }
-    */    
+    }    
     // ------------movement tests---------------
     // plan_move(0, 0, 2, 0, true);
     // // 100 move loop
@@ -1469,6 +1880,14 @@ void app_main(void) {
     ChessBoard board(8, 8);
     setupStandardBoard(board);
     ESP_LOGI("CHESS", "Chess board initialized");
+
+    // Start physical pickup detection task
+    xTaskCreate(piecePickupDetectionTask, "PiecePickup", 8192, &board, 5, NULL);
+    ESP_LOGI("TASK", "Physical pickup detection task started");
+
+    // Start AI response task
+    xTaskCreate(aiResponseTask, "AIResponse", 16384, &board, 4, NULL);
+    ESP_LOGI("TASK", "AI response task started");
 
     uint8_t rx_buffer[I2C_RX_BUF_LEN];
     uint8_t tx_buffer[33];  // For responses
@@ -1510,20 +1929,50 @@ void app_main(void) {
                 board = ChessBoard(8, 8);
                 setupStandardBoard(board);
 
-                // Only send initial board state for black player (UI reads for black, not white)
+                // Reset capture zone counters
+                capturedWhiteCount = 0;
+                capturedBlackCount = 0;
+
+                // When player is black, AI (white) makes the first move
                 if (playerColor == Black) {
-                    i2c_reset_tx_fifo(I2C_SLAVE_PORT);  // Clear any stale data
-                    vTaskDelay(pdMS_TO_TICKS(5));  // Small delay after FIFO clear
+                    if (currentMode == MODE_UI) {
+                        // UI mode: AI makes first move immediately
+                        printf("AI (White) making first move...\n");
+                        ChessAI ai;
+                        board.setTurn(White);
+                        AIMove aiMove = ai.findBestMove(board, White, 3);
+                        if (aiMove.fromRow >= 0) {
+                            board.movePiece(aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
+                            printf("AI opening move: (%d,%d) -> (%d,%d)\n",
+                                   aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
+                            currentTurn = Black;  // Now it's human's (black's) turn
+                        }
+                    } else {
+                        // Physical mode: Signal AI task to make first move
+                        printf("Physical mode: Signaling AI to make first move\n");
+                        aiMoveRequested = true;
+                    }
+
+                    // Send flipped board state (black's perspective)
+                    i2c_reset_tx_fifo(I2C_SLAVE_PORT);
+                    vTaskDelay(pdMS_TO_TICKS(5));
                     memset(tx_buffer, 0, sizeof(tx_buffer));
-                    serializeBoardState(board, tx_buffer);
+                    serializeBoardStateFlipped(board, tx_buffer);
                     i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 33, pdMS_TO_TICKS(100));
-                    printf("Sent initial board state for black player\n");
+                    printf("Sent flipped board state for black player\n");
                 }
             }
             // Handle AA - Piece selection
             else if (rx_buffer[0] == 0xAA && bytes_read >= 2) {
                 int row = (rx_buffer[1] >> 4) & 0x0F;
                 int col = rx_buffer[1] & 0x0F;
+
+                // For black player, UI sends flipped coords - convert back to actual board coords
+                if (playerColor == Black) {
+                    row = 7 - row;
+                    col = 7 - col;
+                }
+
                 selectedRow = row;
                 selectedCol = col;
 
@@ -1535,7 +1984,11 @@ void app_main(void) {
                 i2c_reset_tx_fifo(I2C_SLAVE_PORT);
                 vTaskDelay(pdMS_TO_TICKS(5));
                 memset(tx_buffer, 0, sizeof(tx_buffer));
-                serializePossibleMoves(board, row, col, tx_buffer);
+                if (playerColor == Black) {
+                    serializePossibleMovesFlipped(board, row, col, tx_buffer);
+                } else {
+                    serializePossibleMoves(board, row, col, tx_buffer);
+                }
                 i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 33, pdMS_TO_TICKS(100));
 
                 auto moves = board.getPossibleMoves(row, col);
@@ -1544,28 +1997,163 @@ void app_main(void) {
                     printf("%02X", tx_buffer[i]);
                 }
                 printf("\n");
+
+                // Light up LEDs on physical board to show possible moves
+                if (led != nullptr) {
+                    led->showPossibleMoves(moves);
+                }
             }
             // Handle FF - Move execution
             else if (rx_buffer[0] == 0xFF && bytes_read >= 2) {
                 int toRow = (rx_buffer[1] >> 4) & 0x0F;
                 int toCol = rx_buffer[1] & 0x0F;
+
+                // For black player, UI sends flipped coords - convert back to actual board coords
+                if (playerColor == Black) {
+                    toRow = 7 - toRow;
+                    toCol = 7 - toCol;
+                }
+
                 printf("Move request: (%d,%d) -> (%d,%d)\n", selectedRow, selectedCol, toRow, toCol);
 
                 bool moveSuccess = false;
                 if (selectedRow >= 0 && selectedCol >= 0) {
+                    // Detect special moves BEFORE capture check
+                    bool isCastlingMoveFlag = isCastlingMove(board, selectedRow, selectedCol, toRow, toCol);
+                    bool isEnPassantMoveFlag = isEnPassantMove(board, selectedRow, selectedCol, toRow, toCol);
+
+                    // Check for regular capture BEFORE moving piece
+                    ChessPiece* capturedPiece = board.getPiece(toRow, toCol);
+                    bool isCapture = (capturedPiece != nullptr);
+
+                    // Physical movement and capture handling
+                    if (currentMode == MODE_PHYSICAL) {
+                        // Physical coords: chess row+2 for row
+                        int physFromRow = selectedRow + 2;
+                        int physToRow = toRow + 2;
+
+                        MoveVerifyResult result = VERIFY_SUCCESS;
+
+                        if (isCastlingMoveFlag) {
+                            // CASTLING: Move king to temp square, then rook, then king to final
+                            printf("UI: Executing castling move\n");
+                            bool kingSide = (toCol > selectedCol);
+                            int rookSrcCol = kingSide ? 7 : 0;
+                            int rookDestCol = kingSide ? (toCol - 1) : (toCol + 1);
+
+                            // Use temp square one row toward center from king
+                            int tempRow = physFromRow + 1;  // Row toward center
+                            int tempCol = selectedCol;       // Same column
+
+                            // Step 1: Move king to temp square
+                            printf("Castle Step 1: King to temp (%d,%d)\n", tempRow, tempCol);
+                            plan_move(physFromRow, selectedCol, tempRow, tempCol, true);
+                            if (!wait_for_movement_complete(30000)) {
+                                ESP_LOGE("MOVE", "Castling step 1 timeout");
+                                continue;
+                            }
+
+                            // Step 2: Move rook to final position
+                            printf("Castle Step 2: Rook (%d,%d) to (%d,%d)\n", physFromRow, rookSrcCol, physFromRow, rookDestCol);
+                            plan_move(physFromRow, rookSrcCol, physFromRow, rookDestCol, true);
+                            if (!wait_for_movement_complete(30000)) {
+                                ESP_LOGE("MOVE", "Castling step 2 timeout");
+                                continue;
+                            }
+
+                            // Step 3: Move king from temp to final position
+                            printf("Castle Step 3: King temp to final (%d,%d)\n", physToRow, toCol);
+                            plan_move(tempRow, tempCol, physToRow, toCol, true);
+                            if (!wait_for_movement_complete(30000)) {
+                                ESP_LOGE("MOVE", "Castling step 3 timeout");
+                                continue;
+                            }
+
+                            // Verify castling
+                            result = verify_castling_move(physFromRow, selectedCol, toCol, rookSrcCol, rookDestCol);
+
+                        } else if (isEnPassantMoveFlag) {
+                            // EN PASSANT: Captured pawn is at different location than destination
+                            printf("UI: Executing en passant capture\n");
+                            Color movingColor = board.getPiece(selectedRow, selectedCol)->getColor();
+                            int capturedPawnRow = (movingColor == White) ? (toRow + 1) : (toRow - 1);
+                            int physCapturedRow = capturedPawnRow + 2;
+                            Color opponentColor = (movingColor == White) ? Black : White;
+
+                            // Move captured pawn to capture zone
+                            auto [capZoneRow, capZoneCol] = getNextCaptureSlot(opponentColor);
+                            printf("UI: Moving en passant captured pawn from (%d,%d) to zone (%d,%d)\n",
+                                   physCapturedRow, toCol, capZoneRow, capZoneCol);
+                            plan_move(physCapturedRow, toCol, capZoneRow, capZoneCol, false);
+                            if (!wait_for_movement_complete(30000)) {
+                                ESP_LOGE("MOVE", "En passant capture timeout");
+                                continue;
+                            }
+
+                            // Move attacking pawn to destination
+                            plan_move(physFromRow, selectedCol, physToRow, toCol, false);
+                            if (!wait_for_movement_complete(30000)) {
+                                ESP_LOGE("MOVE", "En passant move timeout");
+                                continue;
+                            }
+
+                            result = verify_simple_move(physFromRow, selectedCol, physToRow, toCol);
+
+                        } else if (isCapture) {
+                            // REGULAR CAPTURE
+                            auto [capZoneRow, capZoneCol] = getNextCaptureSlot(capturedPiece->getColor());
+
+                            printf("UI: Moving captured %s piece to capture zone (%d, %d)\n",
+                                   capturedPiece->getColor() == White ? "white" : "black",
+                                   capZoneRow, capZoneCol);
+
+                            plan_move(physToRow, toCol, capZoneRow, capZoneCol, false);
+
+                            if (!wait_for_movement_complete(30000)) {
+                                ESP_LOGE("MOVE", "Capture movement timeout");
+                                printf("ERROR: Capture movement timeout\n");
+                                continue;
+                            }
+
+                            // Now move the player's piece
+                            plan_move(physFromRow, selectedCol, physToRow, toCol, false);
+
+                            if (!wait_for_movement_complete(30000)) {
+                                ESP_LOGE("MOVE", "Movement timeout");
+                                continue;
+                            }
+
+                            result = verify_simple_move(physFromRow, selectedCol, physToRow, toCol);
+
+                        } else {
+                            // REGULAR MOVE (no capture)
+                            plan_move(physFromRow, selectedCol, physToRow, toCol, false);
+
+                            if (!wait_for_movement_complete(30000)) {
+                                ESP_LOGE("MOVE", "Movement timeout - manual intervention required");
+                                printf("ERROR: Movement timeout\n");
+                                continue;
+                            }
+
+                            result = verify_simple_move(physFromRow, selectedCol, physToRow, toCol);
+                        }
+
+                        if (result != VERIFY_SUCCESS) {
+                            ESP_LOGE("MOVE", "Verification failed: %d", result);
+                            printf("ERROR: Move verification failed (code %d) - manual intervention required\n", result);
+                            continue;  // Don't change turn
+                        }
+
+                        printf("Move verified successfully via reed switches\n");
+                    }
+
+                    // Now update the logical board state
                     board.setTurn(currentTurn);
                     if (board.movePiece(selectedRow, selectedCol, toRow, toCol)) {
                         printf("Move successful! %s moved from (%d,%d) to (%d,%d)\n",
                                currentTurn == White ? "White" : "Black",
                                selectedRow, selectedCol, toRow, toCol);
                         moveSuccess = true;
-
-                        // PLACEHOLDER: Physical movement
-                        // In physical mode, would trigger motor movement here
-                        if (currentMode == MODE_PHYSICAL) {
-                            printf("PLACEHOLDER: Motor would move piece from (%d,%d) to (%d,%d)\n",
-                                   selectedRow, selectedCol, toRow, toCol);
-                        }
 
                         currentTurn = (currentTurn == White) ? Black : White;
                         printf("Turn changed to: %s\n", currentTurn == White ? "White" : "Black");
@@ -1601,22 +2189,53 @@ void app_main(void) {
 
                 selectedRow = selectedCol = -1;
 
+                // Clear LED highlights after move attempt
+                if (led != nullptr) {
+                    led->clearPossibleMoves();
+                }
+
+                // Check for game-over conditions (checkmate or stalemate)
+                bool gameOver = false;
+                bool inCheck = isKingInCheck(board, currentTurn);
+                bool canMove = hasValidMoves(board, currentTurn);
+
+                if (!canMove) {
+                    gameOver = true;
+                    if (inCheck) {
+                        // Checkmate - current player (who is about to move) loses
+                        Color winner = (currentTurn == White) ? Black : White;
+                        printf("CHECKMATE! %s wins!\n", winner == White ? "White" : "Black");
+                    } else {
+                        // Stalemate - draw
+                        printf("STALEMATE! Game is a draw.\n");
+                    }
+                }
+
                 // Send updated board state (after AI move if applicable)
-                //i2c_reset_tx_fifo(I2C_SLAVE_PORT);  // Clear any stale data
-                //vTaskDelay(pdMS_TO_TICKS(50));  // Small delay after FIFO clear
-                //memset(tx_buffer, 0, sizeof(tx_buffer));
                 vTaskDelay(pdMS_TO_TICKS(100));
                 i2c_reset_tx_fifo(I2C_SLAVE_PORT);
                 vTaskDelay(pdMS_TO_TICKS(100));
 
+                // Use game-over preamble (0x2F) if game ended, otherwise normal (0xAA)
+                // Use flipped version for black player perspective
+                if (gameOver) {
+                    if (playerColor == Black) {
+                        serializeBoardStateFlippedGameOver(board, tx_buffer);
+                    } else {
+                        serializeBoardStateGameOver(board, tx_buffer);
+                    }
+                    printf("Sent GAME-OVER board state with 0x2F preamble (33 bytes): ");
+                } else {
+                    if (playerColor == Black) {
+                        serializeBoardStateFlipped(board, tx_buffer);
+                    } else {
+                        serializeBoardState(board, tx_buffer);
+                    }
+                    printf("Sent updated board state (33 bytes): ");
+                }
 
-                serializeBoardState(board, tx_buffer);
-                //serializeBoardState(board, tx_buffer);
                 vTaskDelay(pdMS_TO_TICKS(100));
-                //vTaskDelay(pdMS_TO_TICKS(500));
-                //tx_buffer = {AA, 40, 25, 6234111111110030000000000000000070000000000077770777A98BC89A;
                 i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, sizeof(tx_buffer), pdMS_TO_TICKS(1000));
-                printf("Sent updated board state (33 bytes): ");
                 for (int i = 0; i < 33; i++) {
                     printf("%02X", tx_buffer[i]);
                 }

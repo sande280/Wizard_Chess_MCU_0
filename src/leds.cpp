@@ -48,3 +48,32 @@ void leds::update_led(uint8_t x, uint8_t y, uint8_t r, uint8_t g, uint8_t b)
     uint8_t index = (y % 2 ? 11 - x : x) + 12 * y;
     ESP_ERROR_CHECK(led_strip_set_pixel(led_strip, index, r, g, b));
 }
+
+void leds::showPossibleMoves(const std::vector<std::pair<int, int>>& moves)
+{
+    // Clear LEDs first
+    clearPossibleMoves();
+
+    // Light up each possible destination in green
+    for (const auto& move : moves) {
+        int chessRow = move.first;
+        int chessCol = move.second;
+        // Map chess coords (0-7) to physical LED coords
+        // Physical row = chess row + 2 (rows 0-1 are capture zones)
+        int physRow = chessRow + 2;
+        int physCol = chessCol;
+        update_led(physRow, physCol, 0, 255, 0);  // Green for valid moves
+    }
+    refresh();
+}
+
+void leds::clearPossibleMoves()
+{
+    // Turn off LEDs for main board area (physical rows 2-9 = chess rows 0-7)
+    for (int physRow = 2; physRow < 10; physRow++) {
+        for (int col = 0; col < 8; col++) {
+            update_led(physRow, col, 0, 0, 0);  // Off
+        }
+    }
+    refresh();
+}

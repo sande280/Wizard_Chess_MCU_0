@@ -230,8 +230,10 @@ namespace Student
                 }
                 int interCol = fromColumn+step;
                 int finalCol = fromColumn+2*step;
-                if (isPieceUnderThreat(fromRow, interCol)) return false;
-                if (isPieceUnderThreat(fromRow, finalCol)) return false;
+                // Check if king passes through or lands on an attacked square
+                Color enemy = (cCol == White) ? Black : White;
+                if (isSquareAttacked(fromRow, interCol, enemy)) return false;
+                if (isSquareAttacked(fromRow, finalCol, enemy)) return false;
                 return true;
             }
         }
@@ -613,6 +615,40 @@ namespace Student
             ri++;
         }
         return false;
+    }
+
+    bool ChessBoard::isSquareAttacked(int row, int col, Color attacker)
+    {
+        // Check if any piece of 'attacker' color can attack the square (row, col)
+        // This works even if the square is empty (unlike isPieceUnderThreat)
+        for (int ri = 0; ri < numRows; ri++) {
+            for (int ci = 0; ci < numCols; ci++) {
+                ChessPiece *checkPiece = getPiece(ri, ci);
+                if (checkPiece == nullptr) continue;
+                if (checkPiece->getColor() != attacker) continue;
+
+                if (checkPiece->getType() == Pawn) {
+                    // Pawns attack diagonally
+                    int direction = (attacker == White) ? -1 : 1;
+                    int rowDiff = row - ri;
+                    int colDiff = col - ci;
+                    if (rowDiff == direction && std::abs(colDiff) == 1) {
+                        return true;
+                    }
+                } else {
+                    // For other pieces, check if they can move to this square
+                    if (checkPiece->canMoveToLocation(row, col)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    bool ChessBoard::isEnPassantTarget(int row, int col) const
+    {
+        return enP && row == enPRow && col == enPCol;
     }
 
     std::ostringstream ChessBoard::displayBoard()
