@@ -1385,12 +1385,12 @@ extern "C" {
 void app_main(void) {
     ESP_LOGI(TAG, "Starting ESP32 Chess Game with I2C UI Integration");
 
+    led = new leds();
+    led->init();
+
     switches = new reed();
     switches->init();
     switches->start_scan_task();
-
-    led = new leds();
-    led->init();
 
     speaker = new audio();
     speaker->init();
