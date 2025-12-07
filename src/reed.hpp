@@ -10,6 +10,8 @@
 
 #include "leds.hpp"
 
+#include "motionPos.h"
+
 #define I2C_SCL             GPIO_NUM_6       
 #define I2C_SDA             GPIO_NUM_5
 #define I2C_NUM             I2C_NUM_0

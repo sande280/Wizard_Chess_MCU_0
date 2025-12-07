@@ -1,4 +1,5 @@
 #include "reed.hpp"
+#include "PinDefs.h"
 
 // Define TAG for logging
 static const char* TAG = "REED";
@@ -134,6 +135,11 @@ void reed::scan_task()
 {
     while (1)
     {
+        bool mag = gpio_get_level(MAGNET_PIN);
+        if (gantry.position_reached == false && !mag) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
         read_matrix();
         ESP_LOGI(TAG, "Reed Matrix:");
         for (int i = 0; i < 12; i++)
@@ -142,13 +148,13 @@ void reed::scan_task()
         }
 
         //Junk Code
-        if(grid[0] & 0x01)
+        if(grid[2] & 0x01)
         {
-            led->update_led(0,0,255,0,0);
+            led->update_led(2,0,255,0,0);
         }
         else
         {
-            led->update_led(0,0,0,255,0);
+            led->update_led(2,0,0,255,0);
         }
         led->refresh();
         vTaskDelay(pdMS_TO_TICKS(100));
@@ -191,4 +197,39 @@ bool reed::wait_for_col(uint8_t row, uint8_t col)
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
+}
+
+bool reed::isPopulated(uint8_t row, uint8_t col)
+{
+    int i = 0;
+    while (i < 10)
+    {
+        read_matrix();
+        /*
+        uint8_t col_data = 0;
+        if (row < 8)
+        {
+            uint8_t row_mask = 1 << row;
+            write_reg(REG_OUTPUT_P1, row_mask);
+            vTaskDelay(pdMS_TO_TICKS(5));
+            col_data = read_reg(REG_INPUT_P0);
+            write_reg(REG_OUTPUT_P1, 0x00);
+        }
+        else
+        {
+            uint8_t row_mask = 1 << (row - 8);
+            write_reg(REG_OUTPUT_P2, row_mask);
+            vTaskDelay(pdMS_TO_TICKS(5));
+            col_data = read_reg(REG_INPUT_P0);
+            write_reg(REG_OUTPUT_P2, 0x00);
+        }
+        */
+        if (grid[row] & (1 << col))
+        {
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+        i++;
+    }
+    return false;
 }

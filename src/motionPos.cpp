@@ -128,6 +128,9 @@ void plan_move(int A_from, int B_from, int A_to, int B_to, bool direct) {
 
 // move piece around the space untill detected in position
 int correct_movement(int fix_x, int fix_y){
+
+    ESP_LOGI("CORRECTOR", "current switch state: %d", switches->isPopulated(fix_x, fix_y));
+
     float correction_offset = 5.0f; //mm
     float fix_x_mm = board_pos[fix_x][fix_y][0];
     float fix_y_mm = board_pos[fix_x][fix_y][1];
