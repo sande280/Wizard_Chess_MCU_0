@@ -1495,16 +1495,19 @@ void app_main(void) {
                 printf("Selection: row=%d, col=%d, piece=%s\n", row, col,
                        piece ? (piece->getColor() == White ? "White" : "Black") : "empty");
 
-                // Possible moves - DISABLED until UI reads after AA command
-                // (Writing without reading causes TX ring buffer to accumulate)
-                // i2c_reset_tx_fifo(I2C_SLAVE_PORT);
-                // vTaskDelay(pdMS_TO_TICKS(5));
-                // memset(tx_buffer, 0, sizeof(tx_buffer));
-                // serializePossibleMoves(board, row, col, tx_buffer);
-                // i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 33, pdMS_TO_TICKS(100));
+                // Send possible moves (0xDD + 32 bytes)
+                i2c_reset_tx_fifo(I2C_SLAVE_PORT);
+                vTaskDelay(pdMS_TO_TICKS(5));
+                memset(tx_buffer, 0, sizeof(tx_buffer));
+                serializePossibleMoves(board, row, col, tx_buffer);
+                i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 33, pdMS_TO_TICKS(100));
 
                 auto moves = board.getPossibleMoves(row, col);
-                printf("Possible moves: %d (not sent - UI must read after AA first)\n", (int)moves.size());
+                printf("Possible moves: %d (sent with 0xDD header): ", (int)moves.size());
+                for (int i = 0; i < 33; i++) {
+                    printf("%02X", tx_buffer[i]);
+                }
+                printf("\n");
             }
             // Handle FF - Move execution
             else if (rx_buffer[0] == 0xFF && bytes_read >= 2) {
