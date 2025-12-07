@@ -8,6 +8,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "step_timer.h"
+#include "reed.hpp"
 
 // Define the actual global instances declared as extern in the header
 Gantry_t gantry{};
@@ -123,6 +124,130 @@ void plan_move(int A_from, int B_from, int A_to, int B_to, bool direct) {
     // ---- Step 4: Release magnet
     mc = {toX, toY, 0.0f, 0.0f, false};
     move_queue_push(&mc);
+}
+
+// move piece around the space untill detected in position
+int correct_movement(int fix_x, int fix_y){
+    float correction_offset = 5.0f; //mm
+    float fix_x_mm = board_pos[fix_x][fix_y][0];
+    float fix_y_mm = board_pos[fix_x][fix_y][1];
+
+    moveToXY(fix_x_mm, fix_y_mm, 200.0f, 0.0f, false);
+
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    gpio_set_level(MAGNET_PIN, 1);
+    vTaskDelay(pdMS_TO_TICKS(500));
+    gpio_set_level(MAGNET_PIN, 0);
+
+    //check if detected
+    if (switches->isPopulated(fix_x, fix_y)){
+        ESP_LOGI("CORRECT", "Piece detected at (%d, %d)", fix_x, fix_y);
+        return 1;
+    }
+
+    // offset 1
+    moveToXY(fix_x_mm + correction_offset, fix_y_mm + correction_offset, 20.0f, 0.0f, true);
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    gpio_set_level(MAGNET_PIN, 0);
+
+    if (switches->isPopulated(fix_x, fix_y)){
+        ESP_LOGI("CORRECT", "Piece detected at (%d, %d)", fix_x, fix_y);
+        return 1;
+    }
+
+    // offset 2
+    moveToXY(fix_x_mm + correction_offset, fix_y_mm, 20.0f, 0.0f, true);
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    gpio_set_level(MAGNET_PIN, 0);
+
+    if (switches->isPopulated(fix_x, fix_y)){
+        ESP_LOGI("CORRECT", "Piece detected at (%d, %d)", fix_x, fix_y);
+        return 1;
+    }
+
+    // offset 3
+    moveToXY(fix_x_mm + correction_offset, fix_y_mm - correction_offset, 20.0f, 0.0f, true);
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    gpio_set_level(MAGNET_PIN, 0);
+
+    if (switches->isPopulated(fix_x, fix_y)){
+        ESP_LOGI("CORRECT", "Piece detected at (%d, %d)", fix_x, fix_y);
+        return 1;
+    }
+
+    // offset 4
+    moveToXY(fix_x_mm, fix_y_mm - correction_offset, 20.0f, 0.0f, true);
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    gpio_set_level(MAGNET_PIN, 0);
+
+    if (switches->isPopulated(fix_x, fix_y)){
+        ESP_LOGI("CORRECT", "Piece detected at (%d, %d)", fix_x, fix_y);
+        return 1;
+    }
+
+    // offset 5
+    moveToXY(fix_x_mm - correction_offset, fix_y_mm - correction_offset, 20.0f, 0.0f, true);
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    gpio_set_level(MAGNET_PIN, 0);
+
+    if (switches->isPopulated(fix_x, fix_y)){
+        ESP_LOGI("CORRECT", "Piece detected at (%d, %d)", fix_x, fix_y);
+        return 1;
+    }
+
+    // offset 6
+    moveToXY(fix_x_mm - correction_offset, fix_y_mm, 20.0f, 0.0f, true);
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    gpio_set_level(MAGNET_PIN, 0);
+
+    if (switches->isPopulated(fix_x, fix_y)){
+        ESP_LOGI("CORRECT", "Piece detected at (%d, %d)", fix_x, fix_y);
+        return 1;
+    }
+
+    // offset 7
+    moveToXY(fix_x_mm - correction_offset, fix_y_mm + correction_offset, 20.0f, 0.0f, true);
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    gpio_set_level(MAGNET_PIN, 0);
+
+    if (switches->isPopulated(fix_x, fix_y)){
+        ESP_LOGI("CORRECT", "Piece detected at (%d, %d)", fix_x, fix_y);
+        return 1;
+    }
+
+    // offset 8
+    moveToXY(fix_x_mm, fix_y_mm + correction_offset, 20.0f, 0.0f, true);
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    gpio_set_level(MAGNET_PIN, 0);
+
+    if (switches->isPopulated(fix_x, fix_y)){
+        ESP_LOGI("CORRECT", "Piece detected at (%d, %d)", fix_x, fix_y);
+        return 1;
+    }
+
+    // failed to correct
+    ESP_LOGI("CORRECT", "Failed to detect piece at (%d, %d) after correction attempts", fix_x, fix_y);
+    return -1;
+
 }
 
 int home_gantry() {

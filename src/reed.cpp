@@ -165,3 +165,36 @@ bool reed::wait_for_col(uint8_t row, uint8_t col)
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
+
+bool reed::isPopulated(uint8_t row, uint8_t col)
+{
+    int i = 0;
+    while (i < 10)
+    {
+        uint8_t col_data = 0;
+        if (row < 8)
+        {
+            uint8_t row_mask = 1 << row;
+            write_reg(REG_OUTPUT_P1, row_mask);
+            vTaskDelay(pdMS_TO_TICKS(5));
+            col_data = read_reg(REG_INPUT_P0);
+            write_reg(REG_OUTPUT_P1, 0x00);
+        }
+        else
+        {
+            uint8_t row_mask = 1 << (row - 8);
+            write_reg(REG_OUTPUT_P2, row_mask);
+            vTaskDelay(pdMS_TO_TICKS(5));
+            col_data = read_reg(REG_INPUT_P0);
+            write_reg(REG_OUTPUT_P2, 0x00);
+        }
+
+        if (col_data & (1 << col))
+        {
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+        i++;
+    }
+    return false;
+}
