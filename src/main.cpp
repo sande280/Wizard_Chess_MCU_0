@@ -591,9 +591,9 @@ void uart_printf(const char* format, ...) {
     uart_write_bytes(UART_NUM, buffer, strlen(buffer));
 }
 
-#define I2C_SLAVE_SDA_IO        10
-#define I2C_SLAVE_SCL_IO        11
-#define I2C_SLAVE_PORT          I2C_NUM_0
+#define I2C_SLAVE_SDA_IO        39
+#define I2C_SLAVE_SCL_IO        40
+#define I2C_SLAVE_PORT          I2C_NUM_1
 #define I2C_SLAVE_ADDRESS       0x67
 #define I2C_RX_BUF_LEN          256
 #define I2C_TX_BUF_LEN          256
@@ -1467,7 +1467,7 @@ void app_main(void) {
     vTaskDelay(pdMS_TO_TICKS(2000));
     ESP_LOGI("INIT", "Startup, beginning homing sequence.");
 
-    int homeOK = home_gantry();
+    int homeOK = 0;//home_gantry();
     if (homeOK == -1) {
         ESP_LOGI("INIT", "Homing failed. Halting.");
         while (1) {
