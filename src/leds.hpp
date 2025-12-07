@@ -15,8 +15,8 @@
 #define LED_STRIP_MEMORY_BLOCK_WORDS 0 // let the driver choose a proper memory block size automatically
 #define LED_STRIP_RMT_RES_HZ  (10 * 1000 * 1000)
 
-#define INVERT_X 0
-#define INVERT_Y 0
+#define INVERT_X 1
+#define INVERT_Y 1
 
 class leds
 {

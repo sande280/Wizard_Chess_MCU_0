@@ -13,7 +13,7 @@
 #define I2C_SCL             GPIO_NUM_6       
 #define I2C_SDA             GPIO_NUM_5
 #define I2C_NUM             I2C_NUM_0
-#define I2C_FREQ_HZ         400000
+#define I2C_FREQ_HZ         100000
 #define I2C_TX_BUF_DISABLE  0
 #define I2C_RX_BUF_DISABLE  0
 #define I2C_TIMEOUT_MS      1000
@@ -46,7 +46,7 @@ private:
     void init_pcal();
 
 
-    void write_reg(uint8_t reg, uint8_t val);
+    esp_err_t write_reg(uint8_t reg, uint8_t val);
     uint8_t read_reg(uint8_t reg);
 
     static void scan_task_trampoline(void* arg) {
