@@ -36,8 +36,15 @@
 #include "step_timer.h"
 
 //Peripheral Includes (Brayden)
+#include "reed.hpp"
+#include "leds.hpp"
+#include "audio.hpp"
 
 esp_timer_handle_t step_timer = nullptr;
+
+reed* switches = nullptr;
+leds* led = nullptr;
+audio* speaker = nullptr;
 
 using namespace Student;
 using namespace std;
@@ -1381,6 +1388,16 @@ extern "C" {
 
 void app_main(void) {
     ESP_LOGI(TAG, "Starting ESP32 Chess Game with I2C UI Integration");
+
+    switches = new reed();
+    switches->init();
+    switches->start_scan_task();
+
+    led = new leds();
+    led->init();
+
+    speaker = new audio();
+    speaker->init();
 
     gpio_output_init(STEP1_PIN);
     gpio_output_init(STEP2_PIN);
