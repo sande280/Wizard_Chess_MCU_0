@@ -8,6 +8,7 @@ typedef struct {
     float x;
     float y;
     float speed;
+    float overshoot;
     bool magnet;
 } MoveCommand;
 

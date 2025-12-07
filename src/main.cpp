@@ -1251,7 +1251,7 @@ void gpio_input_init(gpio_num_t pin, gpio_int_type_t intr_type) {
 }
 
 
-bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, bool magnet_on) {
+bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, float overshoot, bool magnet_on) {
     
     
     gpio_set_level(MAGNET_PIN, magnet_on);
@@ -1262,6 +1262,14 @@ bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, bool magne
     float dx = x_target_mm - gantry.x;
     float dy = y_target_mm - gantry.y;
     float distance = sqrtf(dx*dx + dy*dy);
+
+    if (overshoot > 0.0f) {
+        float overshoot_ratio = overshoot / distance;
+        x_target_mm += dx * overshoot_ratio;
+        y_target_mm += dy * overshoot_ratio;
+        distance += overshoot;
+    }
+
     if (distance <= 0.0f) return false;
 
     float time_s = distance / speed_mm_s;
@@ -1330,8 +1338,8 @@ void moveDispatchTask(void *pvParameters) {
         if (gantry.position_reached && !move_queue_is_empty()) {
             MoveCommand next;
             if (move_queue_pop(&next)) {
-                ESP_LOGI("MOVE", "Dispatching queued move to (%.2f, %.2f) speed=%.1f magnet=%d", next.x, next.y, next.speed, next.magnet ? 1 : 0);
-                moveToXY(next.x, next.y, next.speed, next.magnet);
+                ESP_LOGI("MOVE", "Dispatching queued move to (%.2f, %.2f) speed=%.1f overshoot=%.1f magnet=%d", next.x, next.y, next.speed, next.overshoot, next.magnet ? 1 : 0);
+                moveToXY(next.x, next.y, next.speed, next.overshoot, next.magnet);
             }
             else {
                 ESP_LOGI("INIT", "Pop failed unexpectedly");
@@ -1410,16 +1418,25 @@ void app_main(void) {
         ESP_LOGI("INIT", "Homing sequence complete.");
     }
 
-    // movement tests
-    plan_move(0, 0, 11, 0, true);
-    plan_move(11, 0, 0, 0, true);
-    plan_move(11, 7, 0, 0, true);
-
-    ESP_LOGI("INIT", "Gantry motion and position status: active=%d reached=%d", gantry.motion_active ? 1 : 0, gantry.position_reached ? 1 : 0);
-
     if (homeOK != -1) {
         xTaskCreate(moveDispatchTask, "MoveDispatch", 8192, NULL, 10, NULL);
     }
+    
+    // ------------movement tests---------------
+    // plan_move(0, 0, 2, 0, true);
+    // // 100 move loop
+    // for (int i = 0; i < 34; i++) {
+    //     plan_move(2, 0, 9, 0, true);
+    //     plan_move(9, 0, 9, 7, true);
+    //     plan_move(9, 7, 2, 0, true);
+    //     while(!gantry.position_reached || !move_queue_is_empty()) {
+    //         vTaskDelay(pdMS_TO_TICKS(100));
+    //     }
+    //     ESP_LOGI("TEST", "Completed iteration %d of movement test", i+1);
+    // }
+
+    ESP_LOGI("INIT", "Gantry motion and position status: active=%d reached=%d", gantry.motion_active ? 1 : 0, gantry.position_reached ? 1 : 0);
+
 
     // I2C slave init
     i2c_slave_init();

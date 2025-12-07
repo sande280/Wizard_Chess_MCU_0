@@ -44,16 +44,17 @@ void plan_move(int A_from, int B_from, int A_to, int B_to, bool direct) {
     float toY   = board_pos[A_to][B_to][1];
 
     // ---- Step 0: Move to "from" square (magnet off)
-    mc = {fromX, fromY, 200.0f, false};
+    mc = {fromX, fromY, 200.0f, 0.0f, false};
     move_queue_push(&mc);
 
     // ---- Step 1: If direct, go straight there
     if (direct) {
-        mc = {toX, toY, 40.0f, true};
+        mc = {toX, toY, 40.0f, OVERSHOOT_DIST, true};
         move_queue_push(&mc);
     } else {
         mc.magnet = true;
         mc.speed = 40.0f;
+        mc.overshoot = OVERSHOOT_DIST;
 
         //---------------------------------------------------------
         // Step 1: Move halfway out of source square into corridor
@@ -114,12 +115,13 @@ void plan_move(int A_from, int B_from, int A_to, int B_to, bool direct) {
         //---------------------------------------------------------
         mc.x = toX;
         mc.y = toY;
+        mc.overshoot = OVERSHOOT_DIST;
         mc.speed = 10.0f;
         move_queue_push(&mc);
     }
 
     // ---- Step 4: Release magnet
-    mc = {toX, toY, 0.0f, false};
+    mc = {toX, toY, 0.0f, 0.0f, false};
     move_queue_push(&mc);
 }
 

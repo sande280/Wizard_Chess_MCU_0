@@ -2,7 +2,7 @@
 #include "freertos/semphr.h"
 
 // Simple fixed-size circular buffer
-#define MOVE_QUEUE_CAPACITY 16
+#define MOVE_QUEUE_CAPACITY 32
 
 static MoveCommand q_buf[MOVE_QUEUE_CAPACITY];
 static int q_head = 0; // index of next pop

@@ -7,6 +7,8 @@ const float STEPS_PER_REV   = 360.0f / STEP_ANGLE_DEG;
 const float DIST_PER_REV_MM = PULLEY_TEETH * BELT_PITCH_MM;
 const float STEPS_PER_MM    = (STEPS_PER_REV * MICROSTEP) / DIST_PER_REV_MM;
 
+const float OVERSHOOT_DIST = 5.0f;
+
 
 //--------------------------------------------
 // Motion State
