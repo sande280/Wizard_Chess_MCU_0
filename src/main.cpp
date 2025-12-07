@@ -1426,7 +1426,7 @@ extern "C" {
 
 void app_main(void) {
     ESP_LOGI(TAG, "Starting ESP32 Chess Game with I2C UI Integration");
-    /*
+
     led = new leds();
     led->init();
 
@@ -1481,9 +1481,9 @@ void app_main(void) {
     if (homeOK != -1) {
         xTaskCreate(moveDispatchTask, "MoveDispatch", 8192, NULL, 10, NULL);
     }
-    */    
+    
     // ------------movement tests---------------
-    // plan_move(0, 0, 2, 0, true);
+    plan_move(0, 0, 2, 0, true);
     // // 100 move loop
     // for (int i = 0; i < 34; i++) {
     //     plan_move(2, 0, 9, 0, true);
@@ -1494,6 +1494,10 @@ void app_main(void) {
     //     }
     //     ESP_LOGI("TEST", "Completed iteration %d of movement test", i+1);
     // }
+    
+    //test fix position
+    correct_movement(2, 0);
+
 
     ESP_LOGI("INIT", "Gantry motion and position status: active=%d reached=%d", gantry.motion_active ? 1 : 0, gantry.position_reached ? 1 : 0);
 
