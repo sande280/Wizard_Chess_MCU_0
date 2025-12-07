@@ -98,4 +98,4 @@ public:
 
 };
 
-audio* speaker;
+extern audio* speaker;

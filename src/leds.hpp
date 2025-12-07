@@ -42,4 +42,4 @@ public:
 
 };
 
-leds* led;
+extern leds* led;

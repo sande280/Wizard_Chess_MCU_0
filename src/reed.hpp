@@ -63,4 +63,4 @@ public:
     uint8_t grid[12];
 };
 
-reed* switches;
+extern reed* switches;

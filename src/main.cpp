@@ -52,7 +52,9 @@ static const char *TAG = "ESP_CHESS";
 #define RD_BUF_SIZE (BUF_SIZE)
 
 
-
+reed* switches = nullptr;
+audio* speaker = nullptr;
+leds* led = nullptr;
 
 
 typedef struct {
