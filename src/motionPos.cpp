@@ -8,6 +8,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "step_timer.h"
+#include "reed.hpp"
 
 // Define the actual global instances declared as extern in the header
 Gantry_t gantry{};
@@ -44,16 +45,17 @@ void plan_move(int A_from, int B_from, int A_to, int B_to, bool direct) {
     float toY   = board_pos[A_to][B_to][1];
 
     // ---- Step 0: Move to "from" square (magnet off)
-    mc = {fromX, fromY, 200.0f, false};
+    mc = {fromX, fromY, 200.0f, 0.0f, false};
     move_queue_push(&mc);
 
     // ---- Step 1: If direct, go straight there
     if (direct) {
-        mc = {toX, toY, 40.0f, true};
+        mc = {toX, toY, 40.0f, OVERSHOOT_DIST, true};
         move_queue_push(&mc);
     } else {
         mc.magnet = true;
         mc.speed = 40.0f;
+        mc.overshoot = OVERSHOOT_DIST;
 
         //---------------------------------------------------------
         // Step 1: Move halfway out of source square into corridor
@@ -114,13 +116,138 @@ void plan_move(int A_from, int B_from, int A_to, int B_to, bool direct) {
         //---------------------------------------------------------
         mc.x = toX;
         mc.y = toY;
+        mc.overshoot = OVERSHOOT_DIST;
         mc.speed = 10.0f;
         move_queue_push(&mc);
     }
 
     // ---- Step 4: Release magnet
-    mc = {toX, toY, 0.0f, false};
+    mc = {toX, toY, 0.0f, 0.0f, false};
     move_queue_push(&mc);
+}
+
+// move piece around the space untill detected in position
+int correct_movement(int fix_x, int fix_y){
+    float correction_offset = 5.0f; //mm
+    float fix_x_mm = board_pos[fix_x][fix_y][0];
+    float fix_y_mm = board_pos[fix_x][fix_y][1];
+
+    moveToXY(fix_x_mm, fix_y_mm, 200.0f, 0.0f, false);
+
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    gpio_set_level(MAGNET_PIN, 1);
+    vTaskDelay(pdMS_TO_TICKS(500));
+    gpio_set_level(MAGNET_PIN, 0);
+
+    //check if detected
+    if (switches->isPopulated(fix_x, fix_y)){
+        ESP_LOGI("CORRECT", "Piece detected at (%d, %d)", fix_x, fix_y);
+        return 1;
+    }
+
+    // offset 1
+    moveToXY(fix_x_mm + correction_offset, fix_y_mm + correction_offset, 20.0f, 0.0f, true);
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    gpio_set_level(MAGNET_PIN, 0);
+
+    if (switches->isPopulated(fix_x, fix_y)){
+        ESP_LOGI("CORRECT", "Piece detected at (%d, %d)", fix_x, fix_y);
+        return 1;
+    }
+
+    // offset 2
+    moveToXY(fix_x_mm + correction_offset, fix_y_mm, 20.0f, 0.0f, true);
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    gpio_set_level(MAGNET_PIN, 0);
+
+    if (switches->isPopulated(fix_x, fix_y)){
+        ESP_LOGI("CORRECT", "Piece detected at (%d, %d)", fix_x, fix_y);
+        return 1;
+    }
+
+    // offset 3
+    moveToXY(fix_x_mm + correction_offset, fix_y_mm - correction_offset, 20.0f, 0.0f, true);
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    gpio_set_level(MAGNET_PIN, 0);
+
+    if (switches->isPopulated(fix_x, fix_y)){
+        ESP_LOGI("CORRECT", "Piece detected at (%d, %d)", fix_x, fix_y);
+        return 1;
+    }
+
+    // offset 4
+    moveToXY(fix_x_mm, fix_y_mm - correction_offset, 20.0f, 0.0f, true);
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    gpio_set_level(MAGNET_PIN, 0);
+
+    if (switches->isPopulated(fix_x, fix_y)){
+        ESP_LOGI("CORRECT", "Piece detected at (%d, %d)", fix_x, fix_y);
+        return 1;
+    }
+
+    // offset 5
+    moveToXY(fix_x_mm - correction_offset, fix_y_mm - correction_offset, 20.0f, 0.0f, true);
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    gpio_set_level(MAGNET_PIN, 0);
+
+    if (switches->isPopulated(fix_x, fix_y)){
+        ESP_LOGI("CORRECT", "Piece detected at (%d, %d)", fix_x, fix_y);
+        return 1;
+    }
+
+    // offset 6
+    moveToXY(fix_x_mm - correction_offset, fix_y_mm, 20.0f, 0.0f, true);
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    gpio_set_level(MAGNET_PIN, 0);
+
+    if (switches->isPopulated(fix_x, fix_y)){
+        ESP_LOGI("CORRECT", "Piece detected at (%d, %d)", fix_x, fix_y);
+        return 1;
+    }
+
+    // offset 7
+    moveToXY(fix_x_mm - correction_offset, fix_y_mm + correction_offset, 20.0f, 0.0f, true);
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    gpio_set_level(MAGNET_PIN, 0);
+
+    if (switches->isPopulated(fix_x, fix_y)){
+        ESP_LOGI("CORRECT", "Piece detected at (%d, %d)", fix_x, fix_y);
+        return 1;
+    }
+
+    // offset 8
+    moveToXY(fix_x_mm, fix_y_mm + correction_offset, 20.0f, 0.0f, true);
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    gpio_set_level(MAGNET_PIN, 0);
+
+    if (switches->isPopulated(fix_x, fix_y)){
+        ESP_LOGI("CORRECT", "Piece detected at (%d, %d)", fix_x, fix_y);
+        return 1;
+    }
+
+    // failed to correct
+    ESP_LOGI("CORRECT", "Failed to detect piece at (%d, %d) after correction attempts", fix_x, fix_y);
+    return -1;
+
 }
 
 int home_gantry() {
@@ -135,7 +262,7 @@ int home_gantry() {
     if (gpio_get_level(LIMIT_Y_PIN) == 0) {
         ESP_LOGI("HOME", "Y limit switch is already pressed. Backing off.");
         // move +20mm in Y
-        moveToXY(gantry.x, gantry.y + backoff_dist, homing_speed, false);
+        moveToXY(gantry.x, gantry.y + backoff_dist, homing_speed, 0.0f, false);
         while(gantry.position_reached == false) {
             vTaskDelay(pdMS_TO_TICKS(10));
         }
@@ -143,7 +270,7 @@ int home_gantry() {
     }
 
     // back off X every time
-    moveToXY(gantry.x + backoff_dist, gantry.y, homing_speed, false);
+    moveToXY(gantry.x + backoff_dist, gantry.y, homing_speed, 0.0f, false);
     while(gantry.position_reached == false) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
@@ -165,7 +292,7 @@ int home_gantry() {
     limit_y_triggered = false;
     
     // Start moving
-    moveToXY(gantry.x, -2000, homing_speed, false); // Move towards negative A and B
+    moveToXY(gantry.x, -2000, homing_speed, 0.0f, false); // Move towards negative A and B
     int homeStartTime = esp_log_timestamp();
     while(!limit_y_triggered) {
         if (esp_log_timestamp() - homeStartTime > 40000) { // 40 second timeout
@@ -183,7 +310,7 @@ int home_gantry() {
     limit_x_triggered = false;
 
     // Start moving
-    moveToXY(-2000, gantry.y, homing_speed, false); // Move towards negative A and B
+    moveToXY(-2000, gantry.y, homing_speed, 0.0f, false); // Move towards negative A and B
     
     while(!limit_x_triggered) {
         if (esp_log_timestamp() - homeStartTime > 40000) { // 40 second timeout

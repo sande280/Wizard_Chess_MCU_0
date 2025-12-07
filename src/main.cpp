@@ -1,3 +1,4 @@
+// General Includes
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
@@ -19,6 +20,7 @@
 #include "esp_timer.h"
 #include "driver/i2c.h"
 
+//Chess Includes (Jackson)
 #include "Chess.h"
 #include "ChessBoard.hh"
 #include "ChessPiece.hh"
@@ -27,10 +29,16 @@
 #include "PathAnalyzer.hh"
 #include "ChessAI.hh"
 
+//Movement Includes (Jack)
 #include "move_queue.h"
 #include "motionPos.h"
 #include <PinDefs.h>
 #include "step_timer.h"
+
+//Peripheral Includes (Brayden)
+#include "reed.hpp"
+#include "leds.hpp"
+#include "audio.hpp"
 
 esp_timer_handle_t step_timer = nullptr;
 
@@ -44,7 +52,9 @@ static const char *TAG = "ESP_CHESS";
 #define RD_BUF_SIZE (BUF_SIZE)
 
 
-
+reed* switches = nullptr;
+audio* speaker = nullptr;
+leds* led = nullptr;
 
 
 typedef struct {
@@ -1254,7 +1264,7 @@ void gpio_input_init(gpio_num_t pin, gpio_int_type_t intr_type) {
 }
 
 
-bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, bool magnet_on) {
+bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, float overshoot, bool magnet_on) {
     
     
     gpio_set_level(MAGNET_PIN, magnet_on);
@@ -1265,6 +1275,14 @@ bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, bool magne
     float dx = x_target_mm - gantry.x;
     float dy = y_target_mm - gantry.y;
     float distance = sqrtf(dx*dx + dy*dy);
+
+    if (overshoot > 0.0f) {
+        float overshoot_ratio = overshoot / distance;
+        x_target_mm += dx * overshoot_ratio;
+        y_target_mm += dy * overshoot_ratio;
+        distance += overshoot;
+    }
+
     if (distance <= 0.0f) return false;
 
     float time_s = distance / speed_mm_s;
@@ -1333,8 +1351,8 @@ void moveDispatchTask(void *pvParameters) {
         if (gantry.position_reached && !move_queue_is_empty()) {
             MoveCommand next;
             if (move_queue_pop(&next)) {
-                ESP_LOGI("MOVE", "Dispatching queued move to (%.2f, %.2f) speed=%.1f magnet=%d", next.x, next.y, next.speed, next.magnet ? 1 : 0);
-                moveToXY(next.x, next.y, next.speed, next.magnet);
+                ESP_LOGI("MOVE", "Dispatching queued move to (%.2f, %.2f) speed=%.1f overshoot=%.1f magnet=%d", next.x, next.y, next.speed, next.overshoot, next.magnet ? 1 : 0);
+                moveToXY(next.x, next.y, next.speed, next.overshoot, next.magnet);
             }
             else {
                 ESP_LOGI("INIT", "Pop failed unexpectedly");
@@ -1372,6 +1390,16 @@ extern "C" {
 void app_main(void) {
     ESP_LOGI(TAG, "Starting ESP32 Chess Game with I2C UI Integration");
     /*
+    led = new leds();
+    led->init();
+
+    switches = new reed();
+    switches->init();
+    switches->start_scan_task();
+
+    speaker = new audio();
+    speaker->init();
+
     gpio_output_init(STEP1_PIN);
     gpio_output_init(STEP2_PIN);
     gpio_output_init(DIR1_PIN);
@@ -1413,18 +1441,26 @@ void app_main(void) {
         ESP_LOGI("INIT", "Homing sequence complete.");
     }
 
-    // movement tests
-    plan_move(0, 0, 5, 3, true);
-    plan_move(5, 3, 6, 4, true);
-    plan_move(6, 4, 6, 6, true);
-    // plan_move(6, 6, 8, 7, true);
-    plan_move(10, 7, 0, 0, false);
-    ESP_LOGI("INIT", "Gantry motion and position status: active=%d reached=%d", gantry.motion_active ? 1 : 0, gantry.position_reached ? 1 : 0);
-
     if (homeOK != -1) {
         xTaskCreate(moveDispatchTask, "MoveDispatch", 8192, NULL, 10, NULL);
     }
-    */
+    */    
+    // ------------movement tests---------------
+    // plan_move(0, 0, 2, 0, true);
+    // // 100 move loop
+    // for (int i = 0; i < 34; i++) {
+    //     plan_move(2, 0, 9, 0, true);
+    //     plan_move(9, 0, 9, 7, true);
+    //     plan_move(9, 7, 2, 0, true);
+    //     while(!gantry.position_reached || !move_queue_is_empty()) {
+    //         vTaskDelay(pdMS_TO_TICKS(100));
+    //     }
+    //     ESP_LOGI("TEST", "Completed iteration %d of movement test", i+1);
+    // }
+
+    ESP_LOGI("INIT", "Gantry motion and position status: active=%d reached=%d", gantry.motion_active ? 1 : 0, gantry.position_reached ? 1 : 0);
+
+
     // I2C slave init
     i2c_slave_init();
     ESP_LOGI("I2C", "I2C slave initialized at address 0x%02X", I2C_SLAVE_ADDRESS);

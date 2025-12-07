@@ -1,6 +1,6 @@
 #define SLEEP_PIN GPIO_NUM_36
 #define EN_PIN GPIO_NUM_35
-#define MODE0_PIN GPIO_NUM_8 //should be GPIO_NUM_0
+#define MODE0_PIN GPIO_NUM_0 //should be GPIO_NUM_0
 #define MODE1_PIN GPIO_NUM_45
 #define DIR1_PIN GPIO_NUM_13
 #define MODE2_PIN GPIO_NUM_47
