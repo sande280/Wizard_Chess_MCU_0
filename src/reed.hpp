@@ -59,6 +59,7 @@ public:
     void read_matrix();
     void start_scan_task();
     bool wait_for_col(uint8_t row, uint8_t col);
+    bool isPopulated(uint8_t row, uint8_t col);
     uint8_t grid[12];
 };
 
