@@ -341,6 +341,40 @@ int home_gantry() {
     return 1;
 }
 
+void yeet_piece(int A_from, int B_from) {
+    float fromX = board_pos[A_from][B_from][0];
+    float fromY = board_pos[A_from][B_from][1];
+
+    MoveCommand mc;
+    mc = {fromX, fromY, 200.0f, 0.0f, false};
+    move_queue_push(&mc);
+
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    //determine if pos is closer to left or right edge
+    float board_center_x = 409.180f / 2.0f;
+    if (fromX < board_center_x) {
+        //yeet left
+        mc = {0, fromY, 250.0f, 0.0f, true};
+    } else {
+        //yeet right
+        mc = { 408.0f, fromY, 250.0f, 0.0f, true};
+    }
+    move_queue_push(&mc);
+    while (!gantry.position_reached) {
+
+        if (gantry.x > 400 || gantry.x < 10) {
+            //reached yeet position, stop magnet
+            gpio_set_level(MAGNET_PIN, 0);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    vTaskDelay(pdMS_TO_TICKS(500));
+    gpio_set_level(MAGNET_PIN, 0);
+}
+
 //--------------------------------------------
 // Move Verification Functions
 //--------------------------------------------
