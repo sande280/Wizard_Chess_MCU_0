@@ -148,15 +148,15 @@ void reed::scan_task()
         }
 
         //Junk Code
-        if(grid[2] & 0x01)
-        {
-            led->update_led(2,0,255,0,0);
-        }
-        else
-        {
-            led->update_led(2,0,0,255,0);
-        }
-        led->refresh();
+        // if(grid[2] & 0x01)
+        // {
+        //     led->update_led(2,0,255,0,0);
+        // }
+        // else
+        // {
+        //     led->update_led(2,0,0,255,0);
+        // }
+        // led->refresh();
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }

@@ -1904,7 +1904,7 @@ void app_main(void) {
     }
     
     // ------------movement tests---------------
-    plan_move(0, 0, 2, 0, true);
+    // plan_move(0, 0, 2, 0, true);
     // // 100 move loop
     // for (int i = 0; i < 34; i++) {
     //     plan_move(2, 0, 9, 0, true);
@@ -1917,10 +1917,10 @@ void app_main(void) {
     // }
     
     //test fix position
-    while (!gantry.position_reached || !move_queue_is_empty()) {
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-    correct_movement(2, 0);
+    // while (!gantry.position_reached || !move_queue_is_empty()) {
+    //     vTaskDelay(pdMS_TO_TICKS(100));
+    // }
+    // correct_movement(2, 0);
 
 
     ESP_LOGI("INIT", "Gantry motion and position status: active=%d reached=%d", gantry.motion_active ? 1 : 0, gantry.position_reached ? 1 : 0);
