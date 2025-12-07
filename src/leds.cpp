@@ -60,8 +60,8 @@ void leds::showPossibleMoves(const std::vector<std::pair<int, int>>& moves)
         int chessCol = move.second;
         // Map chess coords (0-7) to physical LED coords
         // Physical row = chess row + 2 (rows 0-1 are capture zones)
-        int physRow = chessCol + 2;
-        int physCol = chessRow;
+        int physRow = 9 - chessCol;
+        int physCol = 7 - chessRow;
         update_led(physRow, physCol, 0, 255, 0);  // Green for valid moves
     }
     refresh();
