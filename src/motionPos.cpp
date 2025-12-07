@@ -38,6 +38,13 @@ inline float half_dy_between(int b1, int b2) {
 }
 
 void plan_move(int A_from, int B_from, int A_to, int B_to, bool direct) {
+    
+    if (A_from < 0 || A_from > 11 || B_from < 0 || B_from > 7 ||
+        A_to < 0 || A_to > 11 || B_to < 0 || B_to > 7) {
+        ESP_LOGE("PLAN_MOVE", "Invalid board coordinates: from(%d,%d) to(%d,%d)", A_from, B_from, A_to, B_to);
+        return;
+    }
+
     MoveCommand mc;
     float fromX = board_pos[A_from][B_from][0];
     float fromY = board_pos[A_from][B_from][1];
