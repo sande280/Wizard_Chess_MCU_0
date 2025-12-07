@@ -1539,6 +1539,8 @@ void piecePickupDetectionTask(void *pvParameter) {
     // Wait for initial reed switch scan to populate grid
     vTaskDelay(pdMS_TO_TICKS(500));
 
+    printf("piecePickupDetectionTask started, currentMode=%d\n", currentMode);
+
     while (1) {
         // Read current reed switch state
         switches->read_matrix();
@@ -1553,9 +1555,10 @@ void piecePickupDetectionTask(void *pvParameter) {
 
         // Only process in physical mode when no piece is already selected
         if (currentMode == MODE_PHYSICAL && selectedRow < 0) {
-            // Check main board area (physical rows 2-9 = chess rows 0-7)
+            // Check main board area (physical rows 2-9 = chess cols 7-0)
+            // Coordinate mapping (matching LEDs): physRow = 9 - chessCol, physCol = chessRow
             for (int physRow = 2; physRow < 10; physRow++) {
-                int chessRow = physRow - 2;
+                int chessCol = 9 - physRow;  // Physical row maps to chess column (inverted)
                 uint8_t prev = prevReedGrid[physRow];
                 uint8_t curr = switches->grid[physRow];
 
@@ -1563,21 +1566,22 @@ void piecePickupDetectionTask(void *pvParameter) {
                 uint8_t lifted = prev & ~curr;
 
                 if (lifted) {
-                    for (int col = 0; col < 8; col++) {
-                        if (lifted & (1 << col)) {
-                            printf("Physical pickup detected at (%d, %d)\n", chessRow, col);
+                    for (int physCol = 0; physCol < 8; physCol++) {
+                        if (lifted & (1 << physCol)) {
+                            int chessRow = physCol;  // Physical column maps to chess row
+                            printf("Physical pickup detected at chess (%d, %d)\n", chessRow, chessCol);
 
                             // Verify it's the current player's piece
-                            ChessPiece* piece = boardPtr->getPiece(chessRow, col);
+                            ChessPiece* piece = boardPtr->getPiece(chessRow, chessCol);
                             if (piece && piece->getColor() == currentTurn) {
-                                auto moves = boardPtr->getPossibleMoves(chessRow, col);
+                                auto moves = boardPtr->getPossibleMoves(chessRow, chessCol);
 
                                 if (led != nullptr && !moves.empty()) {
                                     led->showPossibleMoves(moves);
                                 }
 
                                 selectedRow = chessRow;
-                                selectedCol = col;
+                                selectedCol = chessCol;
                                 printf("Selected piece for physical move\n");
                             }
                         }
@@ -1588,10 +1592,10 @@ void piecePickupDetectionTask(void *pvParameter) {
                 uint8_t placed = ~prev & curr;
 
                 if (placed && selectedRow >= 0) {
-                    for (int col = 0; col < 8; col++) {
-                        if (placed & (1 << col)) {
-                            int destRow = chessRow;
-                            int destCol = col;
+                    for (int physCol = 0; physCol < 8; physCol++) {
+                        if (placed & (1 << physCol)) {
+                            int destRow = physCol;      // Physical column = chess row
+                            int destCol = chessCol;     // Already calculated from physRow
 
                             printf("Physical placement detected at (%d, %d)\n", destRow, destCol);
 
@@ -1660,8 +1664,18 @@ void piecePickupDetectionTask(void *pvParameter) {
 // Task to handle AI response moves in physical mode
 void aiResponseTask(void *pvParameter) {
     ChessBoard* boardPtr = (ChessBoard*)pvParameter;
+    int debugCounter = 0;
+
+    printf("aiResponseTask started\n");
 
     while (1) {
+        // Periodic debug output
+        if (++debugCounter >= 50) {  // Every 5 seconds (50 * 100ms)
+            debugCounter = 0;
+            printf("AI Task: mode=%d aiReq=%d turn=%d playerCol=%d\n",
+                   currentMode, aiMoveRequested ? 1 : 0, currentTurn, playerColor);
+        }
+
         // Check if AI should make a move
         if (currentMode == MODE_PHYSICAL && aiMoveRequested && currentTurn != playerColor) {
             aiMoveRequested = false;
@@ -1682,9 +1696,12 @@ void aiResponseTask(void *pvParameter) {
             printf("AI move: (%d,%d) -> (%d,%d)\n",
                    aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
 
-            // Convert chess coords to physical coords (chess row 0-7 -> physical row 2-9)
-            int physFromRow = aiMove.fromRow + 2;
-            int physToRow = aiMove.toRow + 2;
+            // Convert chess coords to physical coords (matching LED mapping)
+            // physRow = 9 - chessCol, physCol = chessRow
+            int physFromRow = 9 - aiMove.fromCol;
+            int physFromCol = aiMove.fromRow;
+            int physToRow = 9 - aiMove.toCol;
+            int physToCol = aiMove.toRow;
 
             // Check for special moves BEFORE regular capture detection
             bool isCastling = isCastlingMove(*boardPtr, aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
@@ -1703,63 +1720,69 @@ void aiResponseTask(void *pvParameter) {
                 int rookSrcCol = kingSide ? 7 : 0;
                 int rookDestCol = kingSide ? (aiMove.toCol - 1) : (aiMove.toCol + 1);
 
-                // Use temp square one row toward center from king
-                int tempRow = physFromRow + 1;  // Row toward center
-                int tempCol = aiMove.fromCol;   // Same column
+                // Convert rook positions to physical coords
+                int physRookSrcRow = 9 - rookSrcCol;
+                int physRookDestRow = 9 - rookDestCol;
+
+                // Use temp square one column toward center from king (in physical coords)
+                int tempRow = physFromRow;
+                int tempCol = physFromCol + 1;  // Move toward center in physical space
 
                 // Step 1: Move king to temp square
                 printf("AI Castle Step 1: King to temp (%d,%d)\n", tempRow, tempCol);
-                plan_move(physFromRow, aiMove.fromCol, tempRow, tempCol, true);
+                plan_move(physFromRow, physFromCol, tempRow, tempCol, true);
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI castling step 1 timed out\n");
                     continue;
                 }
 
                 // Step 2: Move rook to final position
-                printf("AI Castle Step 2: Rook (%d,%d) to (%d,%d)\n", physFromRow, rookSrcCol, physFromRow, rookDestCol);
-                plan_move(physFromRow, rookSrcCol, physFromRow, rookDestCol, true);
+                printf("AI Castle Step 2: Rook (%d,%d) to (%d,%d)\n", physRookSrcRow, physFromCol, physRookDestRow, physFromCol);
+                plan_move(physRookSrcRow, physFromCol, physRookDestRow, physFromCol, true);
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI castling step 2 timed out\n");
                     continue;
                 }
 
                 // Step 3: Move king from temp to final position
-                printf("AI Castle Step 3: King temp to final (%d,%d)\n", physToRow, aiMove.toCol);
-                plan_move(tempRow, tempCol, physToRow, aiMove.toCol, true);
+                printf("AI Castle Step 3: King temp to final (%d,%d)\n", physToRow, physToCol);
+                plan_move(tempRow, tempCol, physToRow, physToCol, true);
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI castling step 3 timed out\n");
                     continue;
                 }
 
                 // Verify castling
-                result = verify_castling_move(physFromRow, aiMove.fromCol, aiMove.toCol, rookSrcCol, rookDestCol);
+                result = verify_castling_move(physFromRow, physFromCol, physToCol, physRookSrcRow, physRookDestRow);
 
             } else if (isEnPassant) {
                 // EN PASSANT: Captured pawn is at different location than destination
                 printf("AI: Executing en passant capture\n");
                 Color aiColor = boardPtr->getPiece(aiMove.fromRow, aiMove.fromCol)->getColor();
                 int capturedPawnRow = (aiColor == White) ? (aiMove.toRow + 1) : (aiMove.toRow - 1);
-                int physCapturedRow = capturedPawnRow + 2;
+                // Captured pawn is at same column as destination, different row
+                int physCapturedRow = 9 - aiMove.toCol;  // Same column as destination
+                int physCapturedCol = capturedPawnRow;   // Row where captured pawn was
                 Color opponentColor = (aiColor == White) ? Black : White;
 
                 // Move captured pawn to capture zone
                 auto [capZoneRow, capZoneCol] = getNextCaptureSlot(opponentColor);
                 printf("AI: Moving en passant captured pawn from (%d,%d) to zone (%d,%d)\n",
-                       physCapturedRow, aiMove.toCol, capZoneRow, capZoneCol);
-                plan_move(physCapturedRow, aiMove.toCol, capZoneRow, capZoneCol, false);
+                       physCapturedRow, physCapturedCol, capZoneRow, capZoneCol);
+                plan_move(physCapturedRow, physCapturedCol, capZoneRow, capZoneCol, false);
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI en passant capture timed out\n");
                     continue;
                 }
 
                 // Move attacking pawn to destination
-                plan_move(physFromRow, aiMove.fromCol, physToRow, aiMove.toCol, false);
+                plan_move(physFromRow, physFromCol, physToRow, physToCol, false);
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI en passant move timed out\n");
                     continue;
                 }
 
-                result = verify_simple_move(physFromRow, aiMove.fromCol, physToRow, aiMove.toCol);
+                result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
 
             } else if (isCapture) {
                 // REGULAR CAPTURE
@@ -1770,7 +1793,7 @@ void aiResponseTask(void *pvParameter) {
                        capZoneRow, capZoneCol);
 
                 // Move captured piece from destination to capture zone
-                plan_move(physToRow, aiMove.toCol, capZoneRow, capZoneCol, false);
+                plan_move(physToRow, physToCol, capZoneRow, capZoneCol, false);
 
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI capture move timed out\n");
@@ -1783,25 +1806,25 @@ void aiResponseTask(void *pvParameter) {
                 }
 
                 // Execute AI piece movement
-                plan_move(physFromRow, aiMove.fromCol, physToRow, aiMove.toCol, false);
+                plan_move(physFromRow, physFromCol, physToRow, physToCol, false);
 
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI move timed out\n");
                     continue;
                 }
 
-                result = verify_simple_move(physFromRow, aiMove.fromCol, physToRow, aiMove.toCol);
+                result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
 
             } else {
                 // REGULAR MOVE (no capture)
-                plan_move(physFromRow, aiMove.fromCol, physToRow, aiMove.toCol, false);
+                plan_move(physFromRow, physFromCol, physToRow, physToCol, false);
 
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI move timed out\n");
                     continue;
                 }
 
-                result = verify_simple_move(physFromRow, aiMove.fromCol, physToRow, aiMove.toCol);
+                result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
             }
 
             if (result != VERIFY_SUCCESS) {
@@ -2082,9 +2105,12 @@ void app_main(void) {
 
                     // Physical movement and capture handling
                     if (currentMode == MODE_PHYSICAL) {
-                        // Physical coords: chess row+2 for row
-                        int physFromRow = selectedRow + 2;
-                        int physToRow = toRow + 2;
+                        // Physical coords: matching LED mapping
+                        // physRow = 9 - chessCol, physCol = chessRow
+                        int physFromRow = 9 - selectedCol;
+                        int physFromCol = selectedRow;
+                        int physToRow = 9 - toCol;
+                        int physToCol = toRow;
 
                         MoveVerifyResult result = VERIFY_SUCCESS;
 
@@ -2095,63 +2121,69 @@ void app_main(void) {
                             int rookSrcCol = kingSide ? 7 : 0;
                             int rookDestCol = kingSide ? (toCol - 1) : (toCol + 1);
 
-                            // Use temp square one row toward center from king
-                            int tempRow = physFromRow + 1;  // Row toward center
-                            int tempCol = selectedCol;       // Same column
+                            // Convert rook positions to physical coords
+                            int physRookSrcRow = 9 - rookSrcCol;
+                            int physRookDestRow = 9 - rookDestCol;
+
+                            // Use temp square one column toward center from king (in physical coords)
+                            int tempRow = physFromRow;
+                            int tempCol = physFromCol + 1;  // Move toward center in physical space
 
                             // Step 1: Move king to temp square
                             printf("Castle Step 1: King to temp (%d,%d)\n", tempRow, tempCol);
-                            plan_move(physFromRow, selectedCol, tempRow, tempCol, true);
+                            plan_move(physFromRow, physFromCol, tempRow, tempCol, true);
                             if (!wait_for_movement_complete(30000)) {
                                 ESP_LOGE("MOVE", "Castling step 1 timeout");
                                 continue;
                             }
 
                             // Step 2: Move rook to final position
-                            printf("Castle Step 2: Rook (%d,%d) to (%d,%d)\n", physFromRow, rookSrcCol, physFromRow, rookDestCol);
-                            plan_move(physFromRow, rookSrcCol, physFromRow, rookDestCol, true);
+                            printf("Castle Step 2: Rook (%d,%d) to (%d,%d)\n", physRookSrcRow, physFromCol, physRookDestRow, physFromCol);
+                            plan_move(physRookSrcRow, physFromCol, physRookDestRow, physFromCol, true);
                             if (!wait_for_movement_complete(30000)) {
                                 ESP_LOGE("MOVE", "Castling step 2 timeout");
                                 continue;
                             }
 
                             // Step 3: Move king from temp to final position
-                            printf("Castle Step 3: King temp to final (%d,%d)\n", physToRow, toCol);
-                            plan_move(tempRow, tempCol, physToRow, toCol, true);
+                            printf("Castle Step 3: King temp to final (%d,%d)\n", physToRow, physToCol);
+                            plan_move(tempRow, tempCol, physToRow, physToCol, true);
                             if (!wait_for_movement_complete(30000)) {
                                 ESP_LOGE("MOVE", "Castling step 3 timeout");
                                 continue;
                             }
 
                             // Verify castling
-                            result = verify_castling_move(physFromRow, selectedCol, toCol, rookSrcCol, rookDestCol);
+                            result = verify_castling_move(physFromRow, physFromCol, physToCol, physRookSrcRow, physRookDestRow);
 
                         } else if (isEnPassantMoveFlag) {
                             // EN PASSANT: Captured pawn is at different location than destination
                             printf("UI: Executing en passant capture\n");
                             Color movingColor = board.getPiece(selectedRow, selectedCol)->getColor();
                             int capturedPawnRow = (movingColor == White) ? (toRow + 1) : (toRow - 1);
-                            int physCapturedRow = capturedPawnRow + 2;
+                            // Captured pawn is at same column as destination, different row
+                            int physCapturedRow = 9 - toCol;      // Same column as destination
+                            int physCapturedCol = capturedPawnRow; // Row where captured pawn was
                             Color opponentColor = (movingColor == White) ? Black : White;
 
                             // Move captured pawn to capture zone
                             auto [capZoneRow, capZoneCol] = getNextCaptureSlot(opponentColor);
                             printf("UI: Moving en passant captured pawn from (%d,%d) to zone (%d,%d)\n",
-                                   physCapturedRow, toCol, capZoneRow, capZoneCol);
-                            plan_move(physCapturedRow, toCol, capZoneRow, capZoneCol, false);
+                                   physCapturedRow, physCapturedCol, capZoneRow, capZoneCol);
+                            plan_move(physCapturedRow, physCapturedCol, capZoneRow, capZoneCol, false);
                             if (!wait_for_movement_complete(30000)) {
                                 ESP_LOGE("MOVE", "En passant capture timeout");
                                 continue;
                             }
 
                             // Move attacking pawn to destination
-                            plan_move(physFromRow, selectedCol, physToRow, toCol, false);
+                            plan_move(physFromRow, physFromCol, physToRow, physToCol, false);
                             if (!wait_for_movement_complete(30000)) {
                                 ESP_LOGE("MOVE", "En passant move timeout");
                                 continue;
                             }
 
-                            result = verify_simple_move(physFromRow, selectedCol, physToRow, toCol);
+                            result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
 
                         } else if (isCapture) {
                             // REGULAR CAPTURE
@@ -2161,7 +2193,7 @@ void app_main(void) {
                                    capturedPiece->getColor() == White ? "white" : "black",
                                    capZoneRow, capZoneCol);
 
-                            plan_move(physToRow, toCol, capZoneRow, capZoneCol, false);
+                            plan_move(physToRow, physToCol, capZoneRow, capZoneCol, false);
 
                             if (!wait_for_movement_complete(30000)) {
                                 ESP_LOGE("MOVE", "Capture movement timeout");
@@ -2170,18 +2202,18 @@ void app_main(void) {
                             }
 
                             // Now move the player's piece
-                            plan_move(physFromRow, selectedCol, physToRow, toCol, false);
+                            plan_move(physFromRow, physFromCol, physToRow, physToCol, false);
 
                             if (!wait_for_movement_complete(30000)) {
                                 ESP_LOGE("MOVE", "Movement timeout");
                                 continue;
                             }
 
-                            result = verify_simple_move(physFromRow, selectedCol, physToRow, toCol);
+                            result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
 
                         } else {
                             // REGULAR MOVE (no capture)
-                            plan_move(physFromRow, selectedCol, physToRow, toCol, false);
+                            plan_move(physFromRow, physFromCol, physToRow, physToCol, false);
 
                             if (!wait_for_movement_complete(30000)) {
                                 ESP_LOGE("MOVE", "Movement timeout - manual intervention required");
@@ -2189,7 +2221,7 @@ void app_main(void) {
                                 continue;
                             }
 
-                            result = verify_simple_move(physFromRow, selectedCol, physToRow, toCol);
+                            result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
                         }
 
                         if (result != VERIFY_SUCCESS) {
