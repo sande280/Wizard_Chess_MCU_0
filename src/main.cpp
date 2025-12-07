@@ -647,17 +647,20 @@ void serializeBoardState(ChessBoard& board, uint8_t* buffer) {
     }
 }
 
-// Serialize possible moves to 32-byte bitmap (0xF for valid, 0x0 for invalid)
+// Serialize possible moves to 33-byte buffer (0xDD header + 32 bytes bitmap)
+// Each nibble: 0xF = valid move destination, 0x0 = not valid
+// Order: Row 0 first (squares 0-7), then Row 1, etc.
 void serializePossibleMoves(ChessBoard& board, int row, int col, uint8_t* buffer) {
-    memset(buffer, 0, 32);
+    buffer[0] = 0xDD;  // Possible moves header
+    memset(buffer + 1, 0, 32);  // Clear data bytes
     auto moves = board.getPossibleMoves(row, col);
     for (auto& move : moves) {
         int index = move.first * 8 + move.second;  // 0-63
         int byteIndex = index / 2;
         if (index % 2 == 0) {
-            buffer[byteIndex] |= 0xF0;  // High nibble
+            buffer[1 + byteIndex] |= 0xF0;  // High nibble
         } else {
-            buffer[byteIndex] |= 0x0F;  // Low nibble
+            buffer[1 + byteIndex] |= 0x0F;  // Low nibble
         }
     }
 }
@@ -1192,6 +1195,43 @@ inline void pulse_step(gpio_num_t pin) {
 static void IRAM_ATTR step_timer_cb(void* arg) {
     if (!move_ctx.active) return;
 
+    // Check bounds before stepping
+    long next_A = motors.A_pos;
+    long next_B = motors.B_pos;
+    
+    if (move_ctx.leader_id == 1) {
+        if (move_ctx.sent_A < move_ctx.total_A) {
+            next_A += (move_ctx.dirA > 0 ? 1 : -1);
+            int temp_err = move_ctx.error_term + move_ctx.follower_steps;
+            if (temp_err >= (int)move_ctx.leader_steps) {
+                if (move_ctx.sent_B < move_ctx.total_B) {
+                    next_B += (move_ctx.dirB > 0 ? 1 : -1);
+                }
+            }
+        }
+    } else {
+        if (move_ctx.sent_B < move_ctx.total_B) {
+            next_B += (move_ctx.dirB > 0 ? 1 : -1);
+            int temp_err = move_ctx.error_term + move_ctx.follower_steps;
+            if (temp_err >= (int)move_ctx.leader_steps) {
+                if (move_ctx.sent_A < move_ctx.total_A) {
+                    next_A += (move_ctx.dirA > 0 ? 1 : -1);
+                }
+            }
+        }
+    }
+
+    float next_x = (next_A + next_B) / (2.0f * STEPS_PER_MM);
+    float next_y = (next_A - next_B) / (2.0f * STEPS_PER_MM);
+
+    if (next_x < 0.0f || next_y < 0.0f || next_x > 410.0f || next_y > 280.0f) {
+        move_ctx.active = false;
+        esp_timer_stop(step_timer);
+        gantry.motion_active = false;
+        gantry.position_reached = true;
+        return;
+    }
+
     if (move_ctx.leader_id == 1) {
         if (move_ctx.sent_A < move_ctx.total_A) {
             pulse_step(STEP1_PIN);
@@ -1386,7 +1426,7 @@ extern "C" {
 
 void app_main(void) {
     ESP_LOGI(TAG, "Starting ESP32 Chess Game with I2C UI Integration");
-
+    /*
     led = new leds();
     led->init();
 
@@ -1441,7 +1481,7 @@ void app_main(void) {
     if (homeOK != -1) {
         xTaskCreate(moveDispatchTask, "MoveDispatch", 8192, NULL, 10, NULL);
     }
-    
+    */    
     // ------------movement tests---------------
     // plan_move(0, 0, 2, 0, true);
     // // 100 move loop
@@ -1468,7 +1508,7 @@ void app_main(void) {
     ESP_LOGI("CHESS", "Chess board initialized");
 
     uint8_t rx_buffer[I2C_RX_BUF_LEN];
-    uint8_t tx_buffer[64];  // For responses
+    uint8_t tx_buffer[33];  // For responses
     static uint8_t i2c_starter[3] = {0x1A, 0x2B, 0x3C};
 
     // Piece encoding reference:
@@ -1510,6 +1550,8 @@ void app_main(void) {
                 // Only send initial board state for black player (UI reads for black, not white)
                 if (playerColor == Black) {
                     i2c_reset_tx_fifo(I2C_SLAVE_PORT);  // Clear any stale data
+                    vTaskDelay(pdMS_TO_TICKS(5));  // Small delay after FIFO clear
+                    memset(tx_buffer, 0, sizeof(tx_buffer));
                     serializeBoardState(board, tx_buffer);
                     i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 33, pdMS_TO_TICKS(100));
                     printf("Sent initial board state for black player\n");
@@ -1526,13 +1568,19 @@ void app_main(void) {
                 printf("Selection: row=%d, col=%d, piece=%s\n", row, col,
                        piece ? (piece->getColor() == White ? "White" : "Black") : "empty");
 
-                // TODO: Send possible moves (32 bytes, no header) - integrate later
-                // serializePossibleMoves(board, row, col, tx_buffer);
-                // i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 32, pdMS_TO_TICKS(100));
+                // Send possible moves (0xDD + 32 bytes)
+                i2c_reset_tx_fifo(I2C_SLAVE_PORT);
+                vTaskDelay(pdMS_TO_TICKS(5));
+                memset(tx_buffer, 0, sizeof(tx_buffer));
+                serializePossibleMoves(board, row, col, tx_buffer);
+                i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 33, pdMS_TO_TICKS(100));
 
-                // Print move count for debugging
                 auto moves = board.getPossibleMoves(row, col);
-                printf("Possible moves: %d (not sent yet)\n", (int)moves.size());
+                printf("Possible moves: %d (sent with 0xDD header): ", (int)moves.size());
+                for (int i = 0; i < 33; i++) {
+                    printf("%02X", tx_buffer[i]);
+                }
+                printf("\n");
             }
             // Handle FF - Move execution
             else if (rx_buffer[0] == 0xFF && bytes_read >= 2) {
@@ -1561,9 +1609,9 @@ void app_main(void) {
 
                         // In UI mode, if it's AI's turn, make AI move
                         if (currentMode == MODE_UI && currentTurn != playerColor) {
-                            printf("AI thinking (minimax depth 4)...\n");
+                            printf("AI thinking (minimax depth 3)...\n");
                             ChessAI ai;
-                            AIMove aiMove = ai.findBestMove(board, currentTurn, 4);
+                            AIMove aiMove = ai.findBestMove(board, currentTurn, 3);
                             if (aiMove.fromRow >= 0) {
                                 board.setTurn(currentTurn);
                                 board.movePiece(aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
@@ -1591,10 +1639,25 @@ void app_main(void) {
                 selectedRow = selectedCol = -1;
 
                 // Send updated board state (after AI move if applicable)
-                i2c_reset_tx_fifo(I2C_SLAVE_PORT);  // Clear any stale data
+                //i2c_reset_tx_fifo(I2C_SLAVE_PORT);  // Clear any stale data
+                //vTaskDelay(pdMS_TO_TICKS(50));  // Small delay after FIFO clear
+                //memset(tx_buffer, 0, sizeof(tx_buffer));
+                vTaskDelay(pdMS_TO_TICKS(100));
+                i2c_reset_tx_fifo(I2C_SLAVE_PORT);
+                vTaskDelay(pdMS_TO_TICKS(100));
+
+
                 serializeBoardState(board, tx_buffer);
-                i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 33, pdMS_TO_TICKS(100));
-                printf("Sent updated board state (33 bytes)\n");
+                //serializeBoardState(board, tx_buffer);
+                vTaskDelay(pdMS_TO_TICKS(100));
+                //vTaskDelay(pdMS_TO_TICKS(500));
+                //tx_buffer = {AA, 40, 25, 6234111111110030000000000000000070000000000077770777A98BC89A;
+                i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, sizeof(tx_buffer), pdMS_TO_TICKS(1000));
+                printf("Sent updated board state (33 bytes): ");
+                for (int i = 0; i < 33; i++) {
+                    printf("%02X", tx_buffer[i]);
+                }
+                printf("\n");
 
                 // Print board to terminal for debugging
                 string boardStr = board.displayExpandedBoard().str();
