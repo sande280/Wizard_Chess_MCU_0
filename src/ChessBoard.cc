@@ -651,6 +651,30 @@ namespace Student
         return enP && row == enPRow && col == enPCol;
     }
 
+    bool ChessBoard::isKingInCheck(Color color)
+    {
+        // kingSafeQ returns true if king is safe (not in check)
+        // So isKingInCheck is the opposite
+        return !kingSafeQ(color);
+    }
+
+    bool ChessBoard::hasValidMoves(Color color)
+    {
+        // Check if any piece of the given color has at least one valid move
+        for (int row = 0; row < numRows; row++) {
+            for (int col = 0; col < numCols; col++) {
+                ChessPiece* piece = getPiece(row, col);
+                if (piece != nullptr && piece->getColor() == color) {
+                    std::vector<std::pair<int, int>> moves = getPossibleMoves(row, col);
+                    if (!moves.empty()) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     std::ostringstream ChessBoard::displayBoard()
     {
 
