@@ -137,7 +137,7 @@ int home_gantry() {
     if (gpio_get_level(LIMIT_Y_PIN) == 0) {
         ESP_LOGI("HOME", "Y limit switch is already pressed. Backing off.");
         // move +20mm in Y
-        moveToXY(gantry.x, gantry.y + backoff_dist, homing_speed, false);
+        moveToXY(gantry.x, gantry.y + backoff_dist, homing_speed, 0.0f, false);
         while(gantry.position_reached == false) {
             vTaskDelay(pdMS_TO_TICKS(10));
         }
@@ -145,7 +145,7 @@ int home_gantry() {
     }
 
     // back off X every time
-    moveToXY(gantry.x + backoff_dist, gantry.y, homing_speed, false);
+    moveToXY(gantry.x + backoff_dist, gantry.y, homing_speed, 0.0f, false);
     while(gantry.position_reached == false) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
@@ -167,7 +167,7 @@ int home_gantry() {
     limit_y_triggered = false;
     
     // Start moving
-    moveToXY(gantry.x, -2000, homing_speed, false); // Move towards negative A and B
+    moveToXY(gantry.x, -2000, homing_speed, 0.0f, false); // Move towards negative A and B
     int homeStartTime = esp_log_timestamp();
     while(!limit_y_triggered) {
         if (esp_log_timestamp() - homeStartTime > 40000) { // 40 second timeout
@@ -185,7 +185,7 @@ int home_gantry() {
     limit_x_triggered = false;
 
     // Start moving
-    moveToXY(-2000, gantry.y, homing_speed, false); // Move towards negative A and B
+    moveToXY(-2000, gantry.y, homing_speed, 0.0f, false); // Move towards negative A and B
     
     while(!limit_x_triggered) {
         if (esp_log_timestamp() - homeStartTime > 40000) { // 40 second timeout
