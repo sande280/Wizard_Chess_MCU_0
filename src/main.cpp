@@ -71,6 +71,8 @@ typedef struct {
 
 static move_state_t move_ctx{};
 
+bool homing_active = false;
+
 
 
 void setupStandardBoard(ChessBoard& board);
@@ -1199,37 +1201,42 @@ static void IRAM_ATTR step_timer_cb(void* arg) {
     long next_A = motors.A_pos;
     long next_B = motors.B_pos;
     
-    if (move_ctx.leader_id == 1) {
-        if (move_ctx.sent_A < move_ctx.total_A) {
-            next_A += (move_ctx.dirA > 0 ? 1 : -1);
-            int temp_err = move_ctx.error_term + move_ctx.follower_steps;
-            if (temp_err >= (int)move_ctx.leader_steps) {
-                if (move_ctx.sent_B < move_ctx.total_B) {
-                    next_B += (move_ctx.dirB > 0 ? 1 : -1);
+    if (!homing_active) {
+
+        if (move_ctx.leader_id == 1) {
+            if (move_ctx.sent_A < move_ctx.total_A) {
+                next_A += (move_ctx.dirA > 0 ? 1 : -1);
+                int temp_err = move_ctx.error_term + move_ctx.follower_steps;
+                if (temp_err >= (int)move_ctx.leader_steps) {
+                    if (move_ctx.sent_B < move_ctx.total_B) {
+                        next_B += (move_ctx.dirB > 0 ? 1 : -1);
+                    }
+                }
+            }
+        } else {
+            if (move_ctx.sent_B < move_ctx.total_B) {
+                next_B += (move_ctx.dirB > 0 ? 1 : -1);
+                int temp_err = move_ctx.error_term + move_ctx.follower_steps;
+                if (temp_err >= (int)move_ctx.leader_steps) {
+                    if (move_ctx.sent_A < move_ctx.total_A) {
+                        next_A += (move_ctx.dirA > 0 ? 1 : -1);
+                    }
                 }
             }
         }
-    } else {
-        if (move_ctx.sent_B < move_ctx.total_B) {
-            next_B += (move_ctx.dirB > 0 ? 1 : -1);
-            int temp_err = move_ctx.error_term + move_ctx.follower_steps;
-            if (temp_err >= (int)move_ctx.leader_steps) {
-                if (move_ctx.sent_A < move_ctx.total_A) {
-                    next_A += (move_ctx.dirA > 0 ? 1 : -1);
-                }
-            }
+
+        float next_x = (next_A + next_B) / (2.0f * STEPS_PER_MM);
+        float next_y = (next_A - next_B) / (2.0f * STEPS_PER_MM);
+
+        if (next_x < 0.0f || next_y < 0.0f || next_x > 410.0f || next_y > 280.0f) {
+            move_ctx.active = false;
+            esp_timer_stop(step_timer);
+            gantry.motion_active = false;
+            gantry.position_reached = true;
+            ESP_LOGI(TAG, "Movement stopped: out of bounds (X: %.2f mm, Y: %.2f mm)", next_x, next_y);
+            return;
         }
-    }
 
-    float next_x = (next_A + next_B) / (2.0f * STEPS_PER_MM);
-    float next_y = (next_A - next_B) / (2.0f * STEPS_PER_MM);
-
-    if (next_x < 0.0f || next_y < 0.0f || next_x > 410.0f || next_y > 280.0f) {
-        move_ctx.active = false;
-        esp_timer_stop(step_timer);
-        gantry.motion_active = false;
-        gantry.position_reached = true;
-        return;
     }
 
     if (move_ctx.leader_id == 1) {
@@ -1467,7 +1474,9 @@ void app_main(void) {
     vTaskDelay(pdMS_TO_TICKS(2000));
     ESP_LOGI("INIT", "Startup, beginning homing sequence.");
 
-    int homeOK = 0;//home_gantry();
+    homing_active = true;
+    int homeOK = home_gantry();
+    homing_active = false;
     if (homeOK == -1) {
         ESP_LOGI("INIT", "Homing failed. Halting.");
         while (1) {
@@ -1496,6 +1505,9 @@ void app_main(void) {
     // }
     
     //test fix position
+    while (!gantry.position_reached || !move_queue_is_empty()) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
     correct_movement(2, 0);
 
 

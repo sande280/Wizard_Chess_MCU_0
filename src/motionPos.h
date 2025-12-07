@@ -1,3 +1,5 @@
+#pragma once
+
 const float PULLEY_TEETH   = 20.0f;
 const float BELT_PITCH_MM  = 2.0f;
 const float STEP_ANGLE_DEG = 1.8f;
@@ -7,7 +9,7 @@ const float STEPS_PER_REV   = 360.0f / STEP_ANGLE_DEG;
 const float DIST_PER_REV_MM = PULLEY_TEETH * BELT_PITCH_MM;
 const float STEPS_PER_MM    = (STEPS_PER_REV * MICROSTEP) / DIST_PER_REV_MM;
 
-const float OVERSHOOT_DIST = 5.0f;
+const float OVERSHOOT_DIST = 0.0f;
 
 
 //--------------------------------------------
@@ -36,6 +38,7 @@ extern Motors_t motors;
 void setupMotion();
 void plan_move(int A_from, int B_from, int A_to, int B_to, bool direct);
 int home_gantry();
+int correct_movement(int fix_x, int fix_y);
 
 // Declare moveToXY so it can be used in motionPos.cpp
 bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, float overshoot, bool magnet_on);
