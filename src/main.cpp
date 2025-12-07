@@ -664,7 +664,9 @@ static void i2c_slave_init(void)
         .slave = {
             .addr_10bit_en = 0,
             .slave_addr = I2C_SLAVE_ADDRESS,
+            .maximum_speed = 0,
         },
+        .clk_flags = 0,
     };
 
     ESP_ERROR_CHECK(i2c_param_config(I2C_SLAVE_PORT, &conf));
@@ -2093,7 +2095,6 @@ void app_main(void) {
 
                 printf("Move request: (%d,%d) -> (%d,%d)\n", selectedRow, selectedCol, toRow, toCol);
 
-                bool moveSuccess = false;
                 if (selectedRow >= 0 && selectedCol >= 0) {
                     // Detect special moves BEFORE capture check
                     bool isCastlingMoveFlag = isCastlingMove(board, selectedRow, selectedCol, toRow, toCol);
@@ -2239,7 +2240,6 @@ void app_main(void) {
                         printf("Move successful! %s moved from (%d,%d) to (%d,%d)\n",
                                currentTurn == White ? "White" : "Black",
                                selectedRow, selectedCol, toRow, toCol);
-                        moveSuccess = true;
 
                         currentTurn = (currentTurn == White) ? Black : White;
                         printf("Turn changed to: %s\n", currentTurn == White ? "White" : "Black");
