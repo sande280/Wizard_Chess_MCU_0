@@ -28,6 +28,26 @@ typedef struct {
     long A_target, B_target;  // target step counts
 } Motors_t;
 
+//--------------------------------------------
+// Move Verification Types
+//--------------------------------------------
+typedef enum {
+    VERIFY_SUCCESS = 0,
+    VERIFY_SOURCE_NOT_EMPTY = 1,
+    VERIFY_DEST_NOT_OCCUPIED = 2,
+    VERIFY_CORRECTION_FAILED = 3,
+    VERIFY_CAPTURE_ZONE_FAIL = 4,
+    VERIFY_TIMEOUT = 5
+} MoveVerifyResult;
+
+typedef struct {
+    int source_row, source_col;
+    int dest_row, dest_col;
+    int capture_zone_row, capture_zone_col;  // -1 if no capture
+    bool is_castling;
+    int rook_src_col, rook_dest_col;         // For castling
+} MoveVerifyContext;
+
 // Declare global instances (defined in motionPos.cpp)
 extern Gantry_t gantry;
 extern Motors_t motors;
@@ -42,6 +62,16 @@ int correct_movement(int fix_x, int fix_y);
 
 // Declare moveToXY so it can be used in motionPos.cpp
 bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, float overshoot, bool magnet_on);
+
+//--------------------------------------------
+// Move Verification Functions
+//--------------------------------------------
+bool wait_for_movement_complete(uint32_t timeout_ms);
+MoveVerifyResult verify_simple_move(int src_row, int src_col, int dest_row, int dest_col);
+MoveVerifyResult verify_capture_move(int src_row, int src_col, int dest_row, int dest_col,
+                                      int cap_zone_row, int cap_zone_col);
+MoveVerifyResult verify_castling_move(int king_row, int king_src_col, int king_dest_col,
+                                       int rook_src_col, int rook_dest_col);
 
 extern volatile bool limit_y_triggered;
 extern volatile bool limit_x_triggered;

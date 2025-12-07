@@ -337,6 +337,87 @@ int home_gantry() {
     
     gpio_intr_disable(LIMIT_Y_PIN);
     gpio_intr_disable(LIMIT_X_PIN);
-    
+
     return 1;
+}
+
+//--------------------------------------------
+// Move Verification Functions
+//--------------------------------------------
+
+bool wait_for_movement_complete(uint32_t timeout_ms) {
+    uint32_t start_time = esp_log_timestamp();
+
+    while (!move_queue_is_empty() || !gantry.position_reached) {
+        if ((esp_log_timestamp() - start_time) > timeout_ms) {
+            ESP_LOGE("VERIFY", "Timeout waiting for movement to complete");
+            return false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+
+    // Additional settle time for reed switch debouncing
+    vTaskDelay(pdMS_TO_TICKS(200));
+    return true;
+}
+
+MoveVerifyResult verify_simple_move(int src_row, int src_col, int dest_row, int dest_col) {
+    // Step 1: Verify source is empty (piece was picked up)
+    if (switches->isPopulated(src_row, src_col)) {
+        ESP_LOGW("VERIFY", "Source (%d,%d) still occupied - piece not picked up", src_row, src_col);
+        return VERIFY_SOURCE_NOT_EMPTY;
+    }
+    ESP_LOGI("VERIFY", "Source (%d,%d) confirmed empty", src_row, src_col);
+
+    // Step 2: Verify destination is occupied (piece was placed)
+    if (!switches->isPopulated(dest_row, dest_col)) {
+        ESP_LOGW("VERIFY", "Destination (%d,%d) not occupied - attempting correction", dest_row, dest_col);
+
+        // Use existing correction logic
+        int correction_result = correct_movement(dest_row, dest_col);
+        if (correction_result != 1) {
+            ESP_LOGE("VERIFY", "Correction failed for destination (%d,%d)", dest_row, dest_col);
+            return VERIFY_CORRECTION_FAILED;
+        }
+    }
+    ESP_LOGI("VERIFY", "Destination (%d,%d) confirmed occupied", dest_row, dest_col);
+
+    return VERIFY_SUCCESS;
+}
+
+MoveVerifyResult verify_capture_move(int src_row, int src_col, int dest_row, int dest_col,
+                                      int cap_zone_row, int cap_zone_col) {
+    // First verify the capture zone has the captured piece
+    if (!switches->isPopulated(cap_zone_row, cap_zone_col)) {
+        ESP_LOGW("VERIFY", "Capture zone (%d,%d) not occupied", cap_zone_row, cap_zone_col);
+
+        int correction_result = correct_movement(cap_zone_row, cap_zone_col);
+        if (correction_result != 1) {
+            ESP_LOGE("VERIFY", "Correction failed for capture zone (%d,%d)", cap_zone_row, cap_zone_col);
+            return VERIFY_CAPTURE_ZONE_FAIL;
+        }
+    }
+    ESP_LOGI("VERIFY", "Capture zone (%d,%d) confirmed occupied", cap_zone_row, cap_zone_col);
+
+    // Then verify the main move
+    return verify_simple_move(src_row, src_col, dest_row, dest_col);
+}
+
+MoveVerifyResult verify_castling_move(int king_row, int king_src_col, int king_dest_col,
+                                       int rook_src_col, int rook_dest_col) {
+    // Verify king moved correctly
+    MoveVerifyResult king_result = verify_simple_move(king_row, king_src_col, king_row, king_dest_col);
+    if (king_result != VERIFY_SUCCESS) {
+        ESP_LOGE("VERIFY", "King verification failed during castling");
+        return king_result;
+    }
+
+    // Verify rook moved correctly
+    MoveVerifyResult rook_result = verify_simple_move(king_row, rook_src_col, king_row, rook_dest_col);
+    if (rook_result != VERIFY_SUCCESS) {
+        ESP_LOGE("VERIFY", "Rook verification failed during castling");
+        return rook_result;
+    }
+
+    return VERIFY_SUCCESS;
 }

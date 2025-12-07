@@ -1,6 +1,8 @@
 #pragma once
 
 #include <stdio.h>
+#include <vector>
+#include <utility>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "led_strip.h"
@@ -39,6 +41,17 @@ public:
      * Updates the led color at position (x,y) to color (r,g,b)
      */
     void update_led(uint8_t x, uint8_t y, uint8_t r, uint8_t g, uint8_t b);
+
+    /**
+     * Light up LEDs for possible move destinations
+     * @param moves Vector of (row, col) pairs in chess coordinates (0-7)
+     */
+    void showPossibleMoves(const std::vector<std::pair<int, int>>& moves);
+
+    /**
+     * Clear all LEDs on the main board area (rows 2-9)
+     */
+    void clearPossibleMoves();
 
 };
 
