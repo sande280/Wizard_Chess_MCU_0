@@ -171,4 +171,46 @@ std::pair<int, int> PathAnalyzer::findCaptureZoneDestination(ChessBoard& board, 
     return std::make_pair(row, col);
 }
 
+std::vector<std::pair<int, int>> PathAnalyzer::getBlockingSquares(
+    int fromRow, int fromCol, int toRow, int toCol, ChessBoard& board)
+{
+    std::vector<std::pair<int, int>> blocking;
+    int rowDiff = toRow - fromRow;
+    int colDiff = toCol - fromCol;
+
+    // Horizontal path
+    if (rowDiff == 0 && colDiff != 0) {
+        int step = (colDiff > 0) ? 1 : -1;
+        for (int col = fromCol + step; col != toCol; col += step) {
+            if (board.getPiece(fromRow, col) != nullptr) {
+                blocking.push_back({fromRow, col});
+            }
+        }
+    }
+    // Vertical path
+    else if (colDiff == 0 && rowDiff != 0) {
+        int step = (rowDiff > 0) ? 1 : -1;
+        for (int row = fromRow + step; row != toRow; row += step) {
+            if (board.getPiece(row, fromCol) != nullptr) {
+                blocking.push_back({row, fromCol});
+            }
+        }
+    }
+    // Diagonal path
+    else if (std::abs(rowDiff) == std::abs(colDiff)) {
+        int rowStep = (rowDiff > 0) ? 1 : -1;
+        int colStep = (colDiff > 0) ? 1 : -1;
+        int row = fromRow + rowStep;
+        int col = fromCol + colStep;
+        while (row != toRow && col != toCol) {
+            if (board.getPiece(row, col) != nullptr) {
+                blocking.push_back({row, col});
+            }
+            row += rowStep;
+            col += colStep;
+        }
+    }
+    return blocking;
+}
+
 }

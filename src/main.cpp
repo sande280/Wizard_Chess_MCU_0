@@ -40,6 +40,9 @@
 #include "leds.hpp"
 #include "audio.hpp"
 
+
+#include "path.h"
+
 esp_timer_handle_t step_timer = nullptr;
 
 using namespace Student;
@@ -1861,8 +1864,8 @@ void aiResponseTask(void *pvParameter) {
                     continue;
                 }
 
-                // Move attacking pawn to destination
-                plan_move(physFromRow, physFromCol, physToRow, physToCol, false);
+                // Move attacking pawn to destination (en passant is single diagonal - always direct)
+                plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI en passant move timed out\n");
                     continue;
@@ -1891,8 +1894,22 @@ void aiResponseTask(void *pvParameter) {
                     printf("Warning: Captured piece not detected in capture zone\n");
                 }
 
-                // Execute AI piece movement
-                plan_move(physFromRow, physFromCol, physToRow, physToCol, false);
+                // Execute AI piece movement - use clear-path for any blockers
+                // Note: Captured piece already moved to capture zone, but other pieces might still block
+                {
+                    ChessPiece* movingPiece = boardPtr->getPiece(aiMove.fromRow, aiMove.fromCol);
+                    Type pieceType = movingPiece ? movingPiece->getType() : Pawn;
+                    PathType pathType = PathAnalyzer::analyzeMovePath(aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol, *boardPtr, pieceType, false);
+                    bool isDirect = (pathType == DIRECT_HORIZONTAL || pathType == DIRECT_VERTICAL ||
+                                    pathType == DIAGONAL_DIRECT || pathType == DIRECT_L_PATH);
+                    printf("AI: Capture move, path %s (%s)\n", isDirect ? "DIRECT" : "INDIRECT", PathAnalyzer::pathTypeToString(pathType).c_str());
+
+                    if (isDirect) {
+                        plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
+                    } else {
+                        movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, *boardPtr);
+                    }
+                }
 
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI move timed out\n");
@@ -1910,7 +1927,12 @@ void aiResponseTask(void *pvParameter) {
                 bool isDirect = (pathType == DIRECT_HORIZONTAL || pathType == DIRECT_VERTICAL ||
                                 pathType == DIAGONAL_DIRECT || pathType == DIRECT_L_PATH);
                 printf("AI: Regular move, path %s (%s)\n", isDirect ? "DIRECT" : "INDIRECT", PathAnalyzer::pathTypeToString(pathType).c_str());
-                plan_move(physFromRow, physFromCol, physToRow, physToCol, isDirect);
+
+                if (isDirect) {
+                    plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
+                } else {
+                    movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, *boardPtr);
+                }
 
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI move timed out\n");
@@ -2291,8 +2313,8 @@ void app_main(void) {
                                 continue;
                             }
 
-                            // Move attacking pawn to destination
-                            plan_move(physFromRow, physFromCol, physToRow, physToCol, false);
+                            // Move attacking pawn to destination (en passant is single diagonal - always direct)
+                            plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
                             if (!wait_for_movement_complete(30000)) {
                                 ESP_LOGE("MOVE", "En passant move timeout");
                                 continue;
@@ -2316,8 +2338,21 @@ void app_main(void) {
                                 continue;
                             }
 
-                            // Now move the player's piece
-                            plan_move(physFromRow, physFromCol, physToRow, physToCol, false);
+                            // Now move the player's piece - use clear-path for any blockers
+                            {
+                                ChessPiece* movingPiece = board.getPiece(selectedRow, selectedCol);
+                                Type pieceType = movingPiece ? movingPiece->getType() : Pawn;
+                                PathType pathType = PathAnalyzer::analyzeMovePath(selectedRow, selectedCol, toRow, toCol, board, pieceType, false);
+                                bool isDirect = (pathType == DIRECT_HORIZONTAL || pathType == DIRECT_VERTICAL ||
+                                                pathType == DIAGONAL_DIRECT || pathType == DIRECT_L_PATH);
+                                printf("Player: Capture move, path %s (%s)\n", isDirect ? "DIRECT" : "INDIRECT", PathAnalyzer::pathTypeToString(pathType).c_str());
+
+                                if (isDirect) {
+                                    plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
+                                } else {
+                                    movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, board);
+                                }
+                            }
 
                             if (!wait_for_movement_complete(30000)) {
                                 ESP_LOGE("MOVE", "Movement timeout");
@@ -2335,7 +2370,12 @@ void app_main(void) {
                             bool isDirect = (pathType == DIRECT_HORIZONTAL || pathType == DIRECT_VERTICAL ||
                                             pathType == DIAGONAL_DIRECT || pathType == DIRECT_L_PATH);
                             printf("Player: Regular move, path %s (%s)\n", isDirect ? "DIRECT" : "INDIRECT", PathAnalyzer::pathTypeToString(pathType).c_str());
-                            plan_move(physFromRow, physFromCol, physToRow, physToCol, isDirect);
+
+                            if (isDirect) {
+                                plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
+                            } else {
+                                movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, board);
+                            }
 
                             if (!wait_for_movement_complete(30000)) {
                                 ESP_LOGE("MOVE", "Movement timeout - manual intervention required");
@@ -2439,7 +2479,8 @@ void app_main(void) {
 
                                     plan_move(physCapturedRow, physCapturedCol, capZoneRow, capZoneCol, false);
                                     wait_for_movement_complete(30000);
-                                    plan_move(physFromRow, physFromCol, physToRow, physToCol, false);
+                                    // En passant pawn move is single diagonal - always direct
+                                    plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
                                     wait_for_movement_complete(30000);
                                     result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
 
@@ -2450,7 +2491,21 @@ void app_main(void) {
 
                                     plan_move(physToRow, physToCol, capZoneRow, capZoneCol, false);
                                     wait_for_movement_complete(30000);
-                                    plan_move(physFromRow, physFromCol, physToRow, physToCol, false);
+
+                                    // Move capturing piece - use clear-path if needed
+                                    {
+                                        Type pieceType = movingPiece ? movingPiece->getType() : Pawn;
+                                        PathType pathType = PathAnalyzer::analyzeMovePath(aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol, board, pieceType, false);
+                                        bool isDirect = (pathType == DIRECT_HORIZONTAL || pathType == DIRECT_VERTICAL ||
+                                                        pathType == DIAGONAL_DIRECT || pathType == DIRECT_L_PATH);
+                                        printf("UI AI: Capture move, path %s (%s)\n", isDirect ? "DIRECT" : "INDIRECT", PathAnalyzer::pathTypeToString(pathType).c_str());
+
+                                        if (isDirect) {
+                                            plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
+                                        } else {
+                                            movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, board);
+                                        }
+                                    }
                                     wait_for_movement_complete(30000);
                                     result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
 
@@ -2462,7 +2517,12 @@ void app_main(void) {
                                     bool isDirect = (pathType == DIRECT_HORIZONTAL || pathType == DIRECT_VERTICAL ||
                                                     pathType == DIAGONAL_DIRECT || pathType == DIRECT_L_PATH);
                                     printf("UI AI: Regular move, path %s (%s)\n", isDirect ? "DIRECT" : "INDIRECT", PathAnalyzer::pathTypeToString(pathType).c_str());
-                                    plan_move(physFromRow, physFromCol, physToRow, physToCol, isDirect);
+
+                                    if (isDirect) {
+                                        plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
+                                    } else {
+                                        movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, board);
+                                    }
                                     wait_for_movement_complete(30000);
                                     result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
                                 }

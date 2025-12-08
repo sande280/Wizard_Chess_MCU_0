@@ -2,6 +2,7 @@
 #include "move_queue.h"
 #include <cmath>
 #include <algorithm>
+#include <tuple>
 #include "PinDefs.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -9,6 +10,10 @@
 #include "freertos/FreeRTOS.h"
 #include "step_timer.h"
 #include "reed.hpp"
+#include "PathAnalyzer.hh"
+#include "ChessBoard.hh"
+
+using namespace Student;
 
 // Define the actual global instances declared as extern in the header
 Gantry_t gantry{};
@@ -461,4 +466,134 @@ MoveVerifyResult verify_castling_move(int king_row, int king_src_col, int king_d
     }
 
     return VERIFY_SUCCESS;
+}
+
+//--------------------------------------------
+// Clear-Path Movement Functions
+//--------------------------------------------
+
+// Find an adjacent empty square for temporarily parking a blocking piece
+// Returns physical coords {row, col} or {-1, -1} if none found
+static std::pair<int, int> findParkingSpot(int physRow, int physCol,
+    int pathFromRow, int pathFromCol, int pathToRow, int pathToCol,
+    ChessBoard& board)
+{
+    // Convert physical to chess coords for board checking
+    int chessRow = physCol;
+    int chessCol = 9 - physRow;
+
+    // Adjacent offsets: up, down, left, right (in chess coords)
+    int offsets[4][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+
+    for (auto& off : offsets) {
+        int newChessRow = chessRow + off[0];
+        int newChessCol = chessCol + off[1];
+
+        // Check bounds (chess: 0-7)
+        if (newChessRow < 0 || newChessRow > 7 ||
+            newChessCol < 0 || newChessCol > 7) continue;
+
+        // Check if empty
+        if (board.getPiece(newChessRow, newChessCol) != nullptr) continue;
+
+        // Convert to physical coords
+        int newPhysRow = 9 - newChessCol;
+        int newPhysCol = newChessRow;
+
+        // Check it's within valid physical board range (2-9 for chess squares)
+        if (newPhysRow < 2 || newPhysRow > 9) continue;
+
+        return {newPhysRow, newPhysCol};
+    }
+    return {-1, -1};  // No parking spot found
+}
+
+// Move a piece using clear-path strategy: temporarily move blocking pieces,
+// then move the main piece directly, then restore blocking pieces
+void plan_move_with_clear(int A_from, int B_from, int A_to, int B_to,
+                          ChessBoard& board)
+{
+    ESP_LOGI("CLEAR", "plan_move_with_clear called: phys(%d,%d)->(%d,%d)", A_from, B_from, A_to, B_to);
+
+    // Convert physical coords to chess coords for PathAnalyzer
+    int chessFromRow = B_from;
+    int chessFromCol = 9 - A_from;
+    int chessToRow = B_to;
+    int chessToCol = 9 - A_to;
+
+    ESP_LOGI("CLEAR", "Converted to chess coords: (%d,%d)->(%d,%d)", chessFromRow, chessFromCol, chessToRow, chessToCol);
+
+    // Debug: Print what pieces are on the board along the path
+    int rowDiff = chessToRow - chessFromRow;
+    int colDiff = chessToCol - chessFromCol;
+    ESP_LOGI("CLEAR", "Path diff: rowDiff=%d, colDiff=%d", rowDiff, colDiff);
+
+    // Get blocking pieces in chess coords
+    auto blocking = PathAnalyzer::getBlockingSquares(
+        chessFromRow, chessFromCol, chessToRow, chessToCol, board);
+
+    ESP_LOGI("CLEAR", "getBlockingSquares returned %d blockers", blocking.size());
+
+    if (blocking.empty()) {
+        // No blockers - direct move
+        ESP_LOGI("CLEAR", "No blocking pieces found, using direct path");
+        plan_move(A_from, B_from, A_to, B_to, true);
+        return;
+    }
+
+    ESP_LOGI("CLEAR", "Found %d blocking piece(s), clearing path", blocking.size());
+
+    // Store original positions and parking spots
+    std::vector<std::tuple<int, int, int, int>> moves; // physRow, physCol, parkRow, parkCol
+
+    for (auto& blockPos : blocking) {
+        int chessRow = blockPos.first;
+        int chessCol = blockPos.second;
+        int physRow = 9 - chessCol;
+        int physCol = chessRow;
+
+        auto parkSpot = findParkingSpot(physRow, physCol,
+            A_from, B_from, A_to, B_to, board);
+
+        if (parkSpot.first == -1) {
+            ESP_LOGE("CLEAR", "No parking spot for piece at phys(%d,%d) chess(%d,%d)",
+                     physRow, physCol, chessRow, chessCol);
+            // Fall back to indirect (shouldn't happen often)
+            plan_move(A_from, B_from, A_to, B_to, false);
+            return;
+        }
+        moves.push_back({physRow, physCol, parkSpot.first, parkSpot.second});
+    }
+
+    // Phase 1: Move blocking pieces to parking spots (all direct)
+    for (auto& move : moves) {
+        int physRow = std::get<0>(move);
+        int physCol = std::get<1>(move);
+        int parkRow = std::get<2>(move);
+        int parkCol = std::get<3>(move);
+        ESP_LOGI("CLEAR", "Phase 1: Moving blocker from (%d,%d) to parking (%d,%d)",
+                 physRow, physCol, parkRow, parkCol);
+        plan_move(physRow, physCol, parkRow, parkCol, true);
+        wait_for_movement_complete(30000);
+    }
+
+    // Phase 2: Move main piece directly
+    ESP_LOGI("CLEAR", "Phase 2: Moving main piece from (%d,%d) to (%d,%d)",
+             A_from, B_from, A_to, B_to);
+    plan_move(A_from, B_from, A_to, B_to, true);
+    wait_for_movement_complete(30000);
+
+    // Phase 3: Move blocking pieces back (all direct)
+    for (auto& move : moves) {
+        int physRow = std::get<0>(move);
+        int physCol = std::get<1>(move);
+        int parkRow = std::get<2>(move);
+        int parkCol = std::get<3>(move);
+        ESP_LOGI("CLEAR", "Phase 3: Returning blocker from parking (%d,%d) to (%d,%d)",
+                 parkRow, parkCol, physRow, physCol);
+        plan_move(parkRow, parkCol, physRow, physCol, true);
+        wait_for_movement_complete(30000);
+    }
+
+    ESP_LOGI("CLEAR", "Clear-path movement complete");
 }

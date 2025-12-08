@@ -5,6 +5,7 @@
 #include "Chess.h"
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace Student {
 
@@ -28,6 +29,9 @@ public:
     static std::string pathTypeToString(PathType type);
 
     static std::pair<int, int> findCaptureZoneDestination(ChessBoard& board, Color capturedColor);
+
+    static std::vector<std::pair<int, int>> getBlockingSquares(
+        int fromRow, int fromCol, int toRow, int toCol, ChessBoard& board);
 
 private:
     static bool isPathClear(int fromRow, int fromCol, int toRow, int toCol, ChessBoard& board);

@@ -11,7 +11,7 @@ const float STEPS_PER_REV   = 360.0f / STEP_ANGLE_DEG;
 const float DIST_PER_REV_MM = PULLEY_TEETH * BELT_PITCH_MM;
 const float STEPS_PER_MM    = (STEPS_PER_REV * MICROSTEP) / DIST_PER_REV_MM;
 
-const float OVERSHOOT_DIST = 0.0f;
+const float OVERSHOOT_DIST = 2.0f;
 
 
 //--------------------------------------------
@@ -75,6 +75,13 @@ MoveVerifyResult verify_capture_move(int src_row, int src_col, int dest_row, int
                                       int cap_zone_row, int cap_zone_col);
 MoveVerifyResult verify_castling_move(int king_row, int king_src_col, int king_dest_col,
                                        int rook_src_col, int rook_dest_col);
+
+//--------------------------------------------
+// Clear-Path Movement Functions
+//--------------------------------------------
+namespace Student { class ChessBoard; }  // Forward declaration
+void plan_move_with_clear(int A_from, int B_from, int A_to, int B_to,
+                          Student::ChessBoard& board);
 
 extern volatile bool limit_y_triggered;
 extern volatile bool limit_x_triggered;
