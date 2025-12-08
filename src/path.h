@@ -19,7 +19,6 @@
 using namespace Student;
 using namespace std;
 
-
 struct Point {
     int x;
     int y;
@@ -32,6 +31,11 @@ struct Point {
     }
 };
 
+struct RestorationJob {
+    Point source; // Where the piece is currently parked
+    Point dest;   // Where it belongs
+};
+
 bool board_state[BOARD_WIDTH][BOARD_HEIGHT];
 
 // --- Helper Functions ---
@@ -41,20 +45,32 @@ bool isValid(int x, int y) {
 }
 
 bool isPopulated(int x, int y) {
-    return switches->isPopulated(x,y);
+    return board_state[x][y];
 }
 
-// Find a parking spot for obstacles
-Point findParkingBuff(Point target, Point exclude) {
+// Updated findParkingBuff: Now accepts the full path to avoid parking ON the path
+Point findParkingBuff(Point target, Point exclude, const std::vector<Point>& futurePath) {
     for (int dist = 1; dist < BOARD_WIDTH; dist++) {
         for (int dx = -dist; dx <= dist; dx++) {
             for (int dy = -dist; dy <= dist; dy++) {
                 if (abs(dx) != dist && abs(dy) != dist) continue;
                 int nx = target.x + dx;
                 int ny = target.y + dy;
+                
                 if (isValid(nx, ny)) {
+                    // 1. Must be physically empty (or the exclusion point)
                     if (!isPopulated(nx, ny) && (nx != exclude.x || ny != exclude.y)) {
-                        return {nx, ny};
+                        
+                        // 2. NEW: Must NOT be on the future path of the main piece
+                        bool onPath = false;
+                        for(const auto& p : futurePath) {
+                            if (p.x == nx && p.y == ny) {
+                                onPath = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!onPath) return {nx, ny};
                     }
                 }
             }
@@ -174,99 +190,58 @@ void movePieceSmart(int startX, int startY, int endX, int endY, ChessBoard* boar
         for(int j = 0; j < BOARD_HEIGHT; j++)
         {
             ChessPiece* piece = board->getPiece(i, j);
-            board_state[i][j] = (piece != nullptr);
+            board_state[9-j][i] = (piece != nullptr);
+            ESP_LOGI("PATHFINDING", "Board State [%d][%d]: %d", 9-j, i, board_state[9-j][i] ? 1 : 0);
         }
     }
 
     std::vector<Point> path = calculatePath(start, end);
     if (path.empty()) return;
 
+    for(int i = 0; i < path.size(); i++)
+    {
+        ESP_LOGI("PATHFINDING", "Path Step %d: (%d, %d)", i, path[i].x, path[i].y);
+        ESP_LOGI("PATHFINDING", "Board State at Step %d:", isPopulated(path[i].x, path[i].y) ? 1 : 0);
+    }
+
     Point currentPos = start;
-
-    bool hasRestorationJob = false;
-    Point restoreSource = {-1, -1}; 
-    Point restoreDest = {-1, -1};   
-
-    static bool pendingRestore = false;
-    static Point pendingSrc, pendingDst;
+    std::vector<RestorationJob> restorationQueue;
 
     for (size_t i = 0; i < path.size(); i++) {
         Point nextStep = path[i];
         
-        // --- 1. Optimization Loop: Merge Multiple Moves ---
-        // Look ahead as long as the direction is the same and path is safe
+        // --- Optimization Loop ---
         while (i + 1 < path.size()) {
             Point nextNext = path[i+1];
-            int dx1 = nextStep.x - currentPos.x;
-            int dy1 = nextStep.y - currentPos.y;
-            // Note: Since we might have already merged, 'dx1' represents the TOTAL vector so far.
-            // We need to compare the DIRECTION of the next single step with our current vector.
-            // Since path[i] -> path[i+1] is always a single step, we check THAT vector.
-            
-            int stepDx = nextNext.x - nextStep.x;
-            int stepDy = nextNext.y - nextStep.y;
-
-            // To verify same direction, we can normalize the vectors or check ratios.
-            // Since we are on a grid, simply checking signs or equality of unit vectors works.
-            // However, our logic relies on combining steps. 
-            // A simpler check: Is the vector from (current -> nextNext) a straight line?
-            // i.e., is (nextNext.x - current.x) purely x or purely y, or purely diagonal?
-            
-            bool sameDir = false;
             int totalDx = nextNext.x - currentPos.x;
             int totalDy = nextNext.y - currentPos.y;
+            bool sameDir = false;
             
-            // Check Straight Horizontal
             if (totalDy == 0 && totalDx != 0) sameDir = true;
-            // Check Straight Vertical
             else if (totalDx == 0 && totalDy != 0) sameDir = true;
-            // Check Perfect Diagonal
-            else if (abs(totalDx) == abs(totalDy)) sameDir = true;
-
-            // IF same direction AND the intermediate square (nextStep) is empty...
-            // Note: For diagonals, we also need to ensure the corners of the intermediate step are clear!
-            // But calculatePath penalizes bad diagonals, so we assume path is decent.
-            // We strictly check if the square we are skipping is empty.
+            else if (abs(totalDx) == abs(totalDy)) sameDir = true; 
+            
             if (sameDir && !isPopulated(nextStep.x, nextStep.y)) {
-                // If diagonal, check the corners of the skip we just made
                 if (abs(totalDx) == abs(totalDy)) {
-                     // We just extended a diagonal. We need to verify the NEW sub-segment is clear.
-                     // Specifically, check the corners for the step (nextStep -> nextNext).
-                     // This is handled by isDiagonalClear check in pathfinding, but let's be safe:
-                     if (!isDiagonalClear(nextStep, nextNext)) break; // Stop merging if squeezed
+                     if (!isDiagonalClear(nextStep, nextNext)) break; 
                 }
-
-                // Merge success: Update target and increment index
                 nextStep = nextNext;
                 i++; 
             } else {
-                break; // Stop merging
+                break; 
             }
-        }
-
-        // --- 2. Diagonal Safety Check ---
-        bool isDiagonal = (abs(currentPos.x - nextStep.x) >= 1 && abs(currentPos.y - nextStep.y) >= 1);
-        Point diagCorner = {-1, -1};
-
-        if (isDiagonal) {
-            // For a long diagonal merge, we might cross multiple squares.
-            // plan_move is straight line. A diagonal move (0,0 -> 3,3) is a straight line in physical space.
-            // We just need to make sure we didn't optimize through a "squeeze".
-            // The optimization loop above checks `isDiagonalClear` for each sub-step, so we should be good.
         }
 
         // --- 3. Obstacle Clearing ---
         if (isPopulated(nextStep.x, nextStep.y) && nextStep != end) {
-            Point parkingSpot = findParkingBuff(nextStep, currentPos);
+            Point parkingSpot = findParkingBuff(nextStep, currentPos, path);
             
-            plan_move(nextStep.x, nextStep.y, parkingSpot.x, parkingSpot.y, true);
+            movePieceSmart(nextStep.x, nextStep.y, parkingSpot.x, parkingSpot.y, board);
             
             board_state[nextStep.x][nextStep.y] = false;
             board_state[parkingSpot.x][parkingSpot.y] = true;
 
-            hasRestorationJob = true;
-            restoreSource = parkingSpot;
-            restoreDest = nextStep;
+            restorationQueue.push_back({parkingSpot, nextStep});
         }
 
         // --- 4. Execute Move ---
@@ -275,28 +250,14 @@ void movePieceSmart(int startX, int startY, int endX, int endY, ChessBoard* boar
         board_state[currentPos.x][currentPos.y] = false;
         board_state[nextStep.x][nextStep.y] = true;
 
-        // --- 5. Restore Logic ---
-        if (pendingRestore && nextStep != pendingDst) {
-            plan_move(pendingSrc.x, pendingSrc.y, pendingDst.x, pendingDst.y, true);
-            board_state[pendingSrc.x][pendingSrc.y] = false;
-            board_state[pendingDst.x][pendingDst.y] = true;
-            pendingRestore = false;
-        }
-
-        if (hasRestorationJob) {
-            pendingRestore = true;
-            pendingSrc = restoreSource;
-            pendingDst = restoreDest;
-            hasRestorationJob = false; 
-        }
-
         currentPos = nextStep;
     }
 
-    if (pendingRestore && currentPos != pendingDst) {
-         plan_move(pendingSrc.x, pendingSrc.y, pendingDst.x, pendingDst.y, true);
-         board_state[pendingSrc.x][pendingSrc.y] = false;
-         board_state[pendingDst.x][pendingDst.y] = true;
-         pendingRestore = false;
+    // --- EXECUTE DEFERRED RESTORATIONS ---
+    // Now that the main piece has finished its entire journey, put everything back.
+    // We iterate backwards (LIFO) to unwind the moves.
+    for (int i = restorationQueue.size() - 1; i >= 0; i--) {
+        RestorationJob job = restorationQueue[i];
+        movePieceSmart(job.source.x, job.source.y, job.dest.x, job.dest.y, board);
     }
 }
