@@ -1,4 +1,8 @@
 #pragma once
+#include <stdarg.h>
 
-// Initialize Wi-Fi AP and start the Web Server
+// Start the server (OTA + Log)
 void start_ota_server();
+
+// Send custom text to the web logger (for uart_printf)
+void send_to_web_log(const char* fmt, va_list args);

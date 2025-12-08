@@ -615,6 +615,9 @@ void uart_printf(const char* format, ...) {
     vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
     uart_write_bytes(UART_NUM, buffer, strlen(buffer));
+    va_start(args, format);
+    send_to_web_log(format, args); // This will format it again for the web buffer
+    va_end(args);
 }
 
 #define I2C_SLAVE_SDA_IO        39
