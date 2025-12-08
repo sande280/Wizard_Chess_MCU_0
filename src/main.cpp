@@ -1819,7 +1819,7 @@ void aiResponseTask(void *pvParameter) {
 
                 // Step 1: Move king to temp square
                 printf("AI Castle Step 1: King to temp (%d,%d)\n", tempRow, tempCol);
-                plan_move(physFromRow, physFromCol, tempRow, tempCol, true);
+                //plan_move(physFromRow, physFromCol, tempRow, tempCol, true);
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI castling step 1 timed out\n");
                     continue;
@@ -1827,7 +1827,7 @@ void aiResponseTask(void *pvParameter) {
 
                 // Step 2: Move rook to final position
                 printf("AI Castle Step 2: Rook (%d,%d) to (%d,%d)\n", physRookSrcRow, physFromCol, physRookDestRow, physFromCol);
-                plan_move(physRookSrcRow, physFromCol, physRookDestRow, physFromCol, true);
+                //plan_move(physRookSrcRow, physFromCol, physRookDestRow, physFromCol, true);
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI castling step 2 timed out\n");
                     continue;
@@ -1835,7 +1835,7 @@ void aiResponseTask(void *pvParameter) {
 
                 // Step 3: Move king from temp to final position
                 printf("AI Castle Step 3: King temp to final (%d,%d)\n", physToRow, physToCol);
-                plan_move(tempRow, tempCol, physToRow, physToCol, true);
+                //plan_move(tempRow, tempCol, physToRow, physToCol, true);
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI castling step 3 timed out\n");
                     continue;
@@ -1858,14 +1858,14 @@ void aiResponseTask(void *pvParameter) {
                 auto [capZoneRow, capZoneCol] = getNextCaptureSlot(opponentColor);
                 printf("AI: Moving en passant captured pawn from (%d,%d) to zone (%d,%d)\n",
                        physCapturedRow, physCapturedCol, capZoneRow, capZoneCol);
-                plan_move(physCapturedRow, physCapturedCol, capZoneRow, capZoneCol, false);
+                //plan_move(physCapturedRow, physCapturedCol, capZoneRow, capZoneCol, false);
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI en passant capture timed out\n");
                     continue;
                 }
 
                 // Move attacking pawn to destination (en passant is single diagonal - always direct)
-                plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
+                //plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI en passant move timed out\n");
                     continue;
@@ -2270,7 +2270,7 @@ void app_main(void) {
 
                             // Step 1: Move king to temp square
                             printf("Castle Step 1: King to temp (%d,%d)\n", tempRow, tempCol);
-                            plan_move(physFromRow, physFromCol, tempRow, tempCol, true);
+                            //plan_move(physFromRow, physFromCol, tempRow, tempCol, true);
                             if (!wait_for_movement_complete(30000)) {
                                 ESP_LOGE("MOVE", "Castling step 1 timeout");
                                 continue;
@@ -2278,7 +2278,7 @@ void app_main(void) {
 
                             // Step 2: Move rook to final position
                             printf("Castle Step 2: Rook (%d,%d) to (%d,%d)\n", physRookSrcRow, physFromCol, physRookDestRow, physFromCol);
-                            plan_move(physRookSrcRow, physFromCol, physRookDestRow, physFromCol, true);
+                            //plan_move(physRookSrcRow, physFromCol, physRookDestRow, physFromCol, true);
                             if (!wait_for_movement_complete(30000)) {
                                 ESP_LOGE("MOVE", "Castling step 2 timeout");
                                 continue;
@@ -2286,7 +2286,7 @@ void app_main(void) {
 
                             // Step 3: Move king from temp to final position
                             printf("Castle Step 3: King temp to final (%d,%d)\n", physToRow, physToCol);
-                            plan_move(tempRow, tempCol, physToRow, physToCol, true);
+                            //plan_move(tempRow, tempCol, physToRow, physToCol, true);
                             if (!wait_for_movement_complete(30000)) {
                                 ESP_LOGE("MOVE", "Castling step 3 timeout");
                                 continue;
@@ -2309,14 +2309,14 @@ void app_main(void) {
                             auto [capZoneRow, capZoneCol] = getNextCaptureSlot(opponentColor);
                             printf("UI: Moving en passant captured pawn from (%d,%d) to zone (%d,%d)\n",
                                    physCapturedRow, physCapturedCol, capZoneRow, capZoneCol);
-                            plan_move(physCapturedRow, physCapturedCol, capZoneRow, capZoneCol, false);
+                            //plan_move(physCapturedRow, physCapturedCol, capZoneRow, capZoneCol, false);
                             if (!wait_for_movement_complete(30000)) {
                                 ESP_LOGE("MOVE", "En passant capture timeout");
                                 continue;
                             }
 
                             // Move attacking pawn to destination (en passant is single diagonal - always direct)
-                            plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
+                            //plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
                             if (!wait_for_movement_complete(30000)) {
                                 ESP_LOGE("MOVE", "En passant move timeout");
                                 continue;
@@ -2463,11 +2463,11 @@ void app_main(void) {
                                     int tempRow = physFromRow;
                                     int tempCol = physFromCol + 1;
 
-                                    plan_move(physFromRow, physFromCol, tempRow, tempCol, true);
+                                    //plan_move(physFromRow, physFromCol, tempRow, tempCol, true);
                                     wait_for_movement_complete(30000);
-                                    plan_move(physRookSrcRow, physFromCol, physRookDestRow, physFromCol, true);
+                                    //plan_move(physRookSrcRow, physFromCol, physRookDestRow, physFromCol, true);
                                     wait_for_movement_complete(30000);
-                                    plan_move(tempRow, tempCol, physToRow, physToCol, true);
+                                    //plan_move(tempRow, tempCol, physToRow, physToCol, true);
                                     wait_for_movement_complete(30000);
                                     result = verify_castling_move(physFromRow, physFromCol, physToCol, physRookSrcRow, physRookDestRow);
 
@@ -2480,10 +2480,10 @@ void app_main(void) {
                                     Color opponentColor = (aiColor == White) ? Black : White;
                                     auto [capZoneRow, capZoneCol] = getNextCaptureSlot(opponentColor);
 
-                                    plan_move(physCapturedRow, physCapturedCol, capZoneRow, capZoneCol, false);
+                                    //plan_move(physCapturedRow, physCapturedCol, capZoneRow, capZoneCol, false);
                                     wait_for_movement_complete(30000);
                                     // En passant pawn move is single diagonal - always direct
-                                    plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
+                                    //plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
                                     wait_for_movement_complete(30000);
                                     result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
 
