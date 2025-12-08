@@ -141,7 +141,7 @@ void reed::scan_task()
             continue;
         }
         read_matrix();
-        ESP_LOGI(TAG, "Reed Matrix:");
+        // ESP_LOGI(TAG, "Reed Matrix:");  // Too verbose
         for (int i = 0; i < 12; i++)
         {
             //ESP_LOGI(TAG, "Row %d: 0x%02X", i, grid[i]);
@@ -193,35 +193,17 @@ bool reed::wait_for_col(uint8_t row, uint8_t col)
 
 bool reed::isPopulated(uint8_t row, uint8_t col)
 {
-    int i = 0;
-    while (i < 10)
+    // Just read from grid - scan_task keeps it updated
+    // Check multiple times for debouncing with majority voting
+    int detectedCount = 0;
+    for (int i = 0; i < 5; i++)
     {
-        read_matrix();
-        /*
-        uint8_t col_data = 0;
-        if (row < 8)
-        {
-            uint8_t row_mask = 1 << row;
-            write_reg(REG_OUTPUT_P1, row_mask);
-            vTaskDelay(pdMS_TO_TICKS(5));
-            col_data = read_reg(REG_INPUT_P0);
-            write_reg(REG_OUTPUT_P1, 0x00);
-        }
-        else
-        {
-            uint8_t row_mask = 1 << (row - 8);
-            write_reg(REG_OUTPUT_P2, row_mask);
-            vTaskDelay(pdMS_TO_TICKS(5));
-            col_data = read_reg(REG_INPUT_P0);
-            write_reg(REG_OUTPUT_P2, 0x00);
-        }
-        */
         if (grid[row] & (1 << col))
         {
-            return true;
+            detectedCount++;
         }
-        vTaskDelay(pdMS_TO_TICKS(10));
-        i++;
+        vTaskDelay(pdMS_TO_TICKS(20));  // Wait for scan_task to update
     }
-    return false;
+    // Return true only if detected in majority of reads (3 of 5)
+    return detectedCount >= 3;
 }

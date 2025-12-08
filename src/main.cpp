@@ -632,6 +632,10 @@ static bool reedGridInitialized = false;
 // Flag to signal AI should make a move
 static volatile bool aiMoveRequested = false;
 
+// Flags for real-time reed switch LED display (White player, before first move)
+static volatile bool showReedStateMode = false;
+static volatile bool firstMoveMade = false;
+
 // Capture zone slot tracking
 static int capturedWhiteCount = 0;  // White pieces captured, go to rows 10-11
 static int capturedBlackCount = 0;  // Black pieces captured, go to rows 0-1
@@ -651,6 +655,71 @@ std::pair<int, int> getNextCaptureSlot(Color capturedPieceColor) {
         int col = slot % 8;
         return {row, col};
     }
+}
+
+// Wait for all starting pieces to be placed on the board
+void waitForBoardSetup() {
+    printf("Waiting for board setup - place all pieces...\n");
+
+    // Track which squares are occupied (32 starting squares)
+    // rows 0,1 = chess rows 0,1 (black), rows 2,3 = chess rows 6,7 (white)
+    bool occupied[4][8] = {{false}};
+    int totalOccupied = 0;
+
+    // Clear all LEDs first
+    if (led) led->clearPossibleMoves();
+
+    while (totalOccupied < 32) {
+        switches->read_matrix();
+
+        // Check chess rows 0, 1 (black pieces)
+        for (int chessRow = 0; chessRow < 2; chessRow++) {
+            for (int chessCol = 0; chessCol < 8; chessCol++) {
+                int idx = chessRow;  // 0 or 1
+                if (!occupied[idx][chessCol]) {
+                    int physRow = 9 - chessCol;
+                    int physCol = chessRow;
+                    if (switches->grid[physRow] & (1 << physCol)) {
+                        occupied[idx][chessCol] = true;
+                        totalOccupied++;
+                        if (led) {
+                            led->update_led(physRow, physCol, 0, 255, 0);  // Green
+                            led->refresh();
+                        }
+                        printf("Piece placed: chess(%d,%d) -> %d/32\n",
+                               chessRow, chessCol, totalOccupied);
+                    }
+                }
+            }
+        }
+
+        // Check chess rows 6, 7 (white pieces)
+        for (int chessRow = 6; chessRow < 8; chessRow++) {
+            for (int chessCol = 0; chessCol < 8; chessCol++) {
+                int idx = chessRow - 4;  // 2 or 3
+                if (!occupied[idx][chessCol]) {
+                    int physRow = 9 - chessCol;
+                    int physCol = chessRow;
+                    if (switches->grid[physRow] & (1 << physCol)) {
+                        occupied[idx][chessCol] = true;
+                        totalOccupied++;
+                        if (led) {
+                            led->update_led(physRow, physCol, 0, 255, 0);  // Green
+                            led->refresh();
+                        }
+                        printf("Piece placed: chess(%d,%d) -> %d/32\n",
+                               chessRow, chessCol, totalOccupied);
+                    }
+                }
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+    printf("Board setup complete!\n");
+    vTaskDelay(pdMS_TO_TICKS(500));
+    if (led) led->clearPossibleMoves();  // Turn off LEDs
 }
 
 static void i2c_slave_init(void)
@@ -1512,7 +1581,7 @@ void moveDispatchTask(void *pvParameters) {
         }
 
         if (gantry.position_reached) {
-            ESP_LOGI("MOVE", "Idle: position reached");
+            // ESP_LOGI("MOVE", "Idle: position reached");  // Too verbose
         }
         vTaskDelay(pdMS_TO_TICKS(200));
     }
@@ -1546,6 +1615,21 @@ void piecePickupDetectionTask(void *pvParameter) {
     while (1) {
         // Read current reed switch state
         switches->read_matrix();
+
+        // Real-time reed switch LED display (White player, before first move)
+        if (showReedStateMode && !firstMoveMade && playerColor == White && led != nullptr) {
+            // Update LEDs to show current reed switch states for main board
+            for (int physRow = 2; physRow < 10; physRow++) {
+                for (int physCol = 0; physCol < 8; physCol++) {
+                    if (switches->grid[physRow] & (1 << physCol)) {
+                        led->update_led(physRow, physCol, 0, 255, 0);  // Green for detected
+                    } else {
+                        led->update_led(physRow, physCol, 0, 0, 0);    // Off for empty
+                    }
+                }
+            }
+            led->refresh();
+        }
 
         // Initialize previous state on first run
         if (!reedGridInitialized) {
@@ -1819,7 +1903,14 @@ void aiResponseTask(void *pvParameter) {
 
             } else {
                 // REGULAR MOVE (no capture)
-                plan_move(physFromRow, physFromCol, physToRow, physToCol, false);
+                // Check if direct path is clear using PathAnalyzer
+                ChessPiece* movingPiece = boardPtr->getPiece(aiMove.fromRow, aiMove.fromCol);
+                Type pieceType = movingPiece ? movingPiece->getType() : Pawn;
+                PathType pathType = PathAnalyzer::analyzeMovePath(aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol, *boardPtr, pieceType, false);
+                bool isDirect = (pathType == DIRECT_HORIZONTAL || pathType == DIRECT_VERTICAL ||
+                                pathType == DIAGONAL_DIRECT || pathType == DIRECT_L_PATH);
+                printf("AI: Regular move, path %s (%s)\n", isDirect ? "DIRECT" : "INDIRECT", PathAnalyzer::pathTypeToString(pathType).c_str());
+                plan_move(physFromRow, physFromCol, physToRow, physToCol, isDirect);
 
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI move timed out\n");
@@ -1829,10 +1920,21 @@ void aiResponseTask(void *pvParameter) {
                 result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
             }
 
-            if (result != VERIFY_SUCCESS) {
-                printf("AI move verification failed: %d\n", result);
-                // Could attempt correction here
+            while (result != VERIFY_SUCCESS) {
+                ESP_LOGE("MOVE", "AI verification failed: %d", result);
+                if (result == VERIFY_SOURCE_NOT_EMPTY) {
+                    printf("ERROR: Piece not picked up from (%d,%d) - please remove it manually\n", physFromRow, physFromCol);
+                } else if (result == VERIFY_DEST_NOT_OCCUPIED) {
+                    printf("ERROR: Piece not placed at (%d,%d) - please place it manually\n", physToRow, physToCol);
+                } else {
+                    printf("ERROR: AI move verification failed (code %d) - manual intervention required\n", result);
+                }
+                printf("Waiting for board correction... (checking every 2 seconds)\n");
+
+                vTaskDelay(pdMS_TO_TICKS(2000));
+                result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
             }
+            printf("AI move verified successfully\n");
 
             // Update board state
             boardPtr->setTurn(currentTurn);
@@ -2012,6 +2114,18 @@ void app_main(void) {
                 capturedWhiteCount = 0;
                 capturedBlackCount = 0;
 
+                // Non-blocking: Enable real-time reed LED display for White player
+                // (no longer waiting for all 32 pieces - allows testing with partial setup)
+                if (playerColor == White) {
+                    showReedStateMode = true;
+                    firstMoveMade = false;
+                    printf("Board ready - reed switch states will be shown via LEDs\n");
+                } else {
+                    showReedStateMode = false;
+                    firstMoveMade = false;
+                    printf("Board ready - AI will make first move\n");
+                }
+
                 // When player is black, AI (white) makes the first move
                 if (playerColor == Black) {
                     if (currentMode == MODE_UI) {
@@ -2104,8 +2218,8 @@ void app_main(void) {
                     ChessPiece* capturedPiece = board.getPiece(toRow, toCol);
                     bool isCapture = (capturedPiece != nullptr);
 
-                    // Physical movement and capture handling
-                    if (currentMode == MODE_PHYSICAL) {
+                    // Physical movement and capture handling (runs in both UI and Physical modes)
+                    {
                         // Physical coords: matching LED mapping
                         // physRow = 9 - chessCol, physCol = chessRow
                         int physFromRow = 9 - selectedCol;
@@ -2214,7 +2328,14 @@ void app_main(void) {
 
                         } else {
                             // REGULAR MOVE (no capture)
-                            plan_move(physFromRow, physFromCol, physToRow, physToCol, false);
+                            // Check if direct path is clear using PathAnalyzer
+                            ChessPiece* movingPiece = board.getPiece(selectedRow, selectedCol);
+                            Type pieceType = movingPiece ? movingPiece->getType() : Pawn;
+                            PathType pathType = PathAnalyzer::analyzeMovePath(selectedRow, selectedCol, toRow, toCol, board, pieceType, false);
+                            bool isDirect = (pathType == DIRECT_HORIZONTAL || pathType == DIRECT_VERTICAL ||
+                                            pathType == DIAGONAL_DIRECT || pathType == DIRECT_L_PATH);
+                            printf("Player: Regular move, path %s (%s)\n", isDirect ? "DIRECT" : "INDIRECT", PathAnalyzer::pathTypeToString(pathType).c_str());
+                            plan_move(physFromRow, physFromCol, physToRow, physToCol, isDirect);
 
                             if (!wait_for_movement_complete(30000)) {
                                 ESP_LOGE("MOVE", "Movement timeout - manual intervention required");
@@ -2225,12 +2346,21 @@ void app_main(void) {
                             result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
                         }
 
-                        if (result != VERIFY_SUCCESS) {
+                        while (result != VERIFY_SUCCESS) {
                             ESP_LOGE("MOVE", "Verification failed: %d", result);
-                            printf("ERROR: Move verification failed (code %d) - manual intervention required\n", result);
-                            continue;  // Don't change turn
-                        }
+                            if (result == VERIFY_SOURCE_NOT_EMPTY) {
+                                printf("ERROR: Piece not picked up from (%d,%d) - please remove it manually\n", physFromRow, physFromCol);
+                            } else if (result == VERIFY_DEST_NOT_OCCUPIED) {
+                                printf("ERROR: Piece not placed at (%d,%d) - please place it manually\n", physToRow, physToCol);
+                            } else {
+                                printf("ERROR: Move verification failed (code %d) - manual intervention required\n", result);
+                            }
+                            printf("Waiting for board correction... (checking every 2 seconds)\n");
 
+                            // Wait and retry verification
+                            vTaskDelay(pdMS_TO_TICKS(2000));
+                            result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
+                        }
                         printf("Move verified successfully via reed switches\n");
                     }
 
@@ -2241,6 +2371,16 @@ void app_main(void) {
                                currentTurn == White ? "White" : "Black",
                                selectedRow, selectedCol, toRow, toCol);
 
+                        // Disable reed state LED display after first move
+                        if (!firstMoveMade) {
+                            firstMoveMade = true;
+                            showReedStateMode = false;
+                            if (led != nullptr) {
+                                led->clearPossibleMoves();  // Clear the reed state display
+                            }
+                            printf("First move made - reed state display disabled\n");
+                        }
+
                         currentTurn = (currentTurn == White) ? Black : White;
                         printf("Turn changed to: %s\n", currentTurn == White ? "White" : "Black");
 
@@ -2250,15 +2390,104 @@ void app_main(void) {
                             ChessAI ai;
                             AIMove aiMove = ai.findBestMove(board, currentTurn, 3);
                             if (aiMove.fromRow >= 0) {
-                                board.setTurn(currentTurn);
-                                board.movePiece(aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
-                                printf("AI moved: (%d,%d) -> (%d,%d), score=%.2f\n",
+                                printf("AI move: (%d,%d) -> (%d,%d), score=%.2f\n",
                                        aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol, aiMove.score);
 
-                                // PLACEHOLDER: Physical movement for AI
-                                if (currentMode == MODE_PHYSICAL) {
-                                    printf("PLACEHOLDER: Motor would move AI piece\n");
+                                // Convert chess coords to physical coords (matching LED mapping)
+                                int physFromRow = 9 - aiMove.fromCol;
+                                int physFromCol = aiMove.fromRow;
+                                int physToRow = 9 - aiMove.toCol;
+                                int physToCol = aiMove.toRow;
+
+                                // Detect special moves BEFORE modifying board
+                                bool isCastling = isCastlingMove(board, aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
+                                bool isEnPassant = isEnPassantMove(board, aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
+                                ChessPiece* targetPiece = board.getPiece(aiMove.toRow, aiMove.toCol);
+                                bool isCapture = (targetPiece != nullptr);
+                                ChessPiece* movingPiece = board.getPiece(aiMove.fromRow, aiMove.fromCol);
+                                Color aiColor = movingPiece ? movingPiece->getColor() : currentTurn;
+
+                                MoveVerifyResult result = VERIFY_SUCCESS;
+
+                                if (isCastling) {
+                                    // CASTLING
+                                    printf("UI AI: Executing castling move\n");
+                                    bool kingSide = (aiMove.toCol > aiMove.fromCol);
+                                    int rookSrcCol = kingSide ? 7 : 0;
+                                    int rookDestCol = kingSide ? (aiMove.toCol - 1) : (aiMove.toCol + 1);
+                                    int physRookSrcRow = 9 - rookSrcCol;
+                                    int physRookDestRow = 9 - rookDestCol;
+                                    int tempRow = physFromRow;
+                                    int tempCol = physFromCol + 1;
+
+                                    plan_move(physFromRow, physFromCol, tempRow, tempCol, true);
+                                    wait_for_movement_complete(30000);
+                                    plan_move(physRookSrcRow, physFromCol, physRookDestRow, physFromCol, true);
+                                    wait_for_movement_complete(30000);
+                                    plan_move(tempRow, tempCol, physToRow, physToCol, true);
+                                    wait_for_movement_complete(30000);
+                                    result = verify_castling_move(physFromRow, physFromCol, physToCol, physRookSrcRow, physRookDestRow);
+
+                                } else if (isEnPassant) {
+                                    // EN PASSANT
+                                    printf("UI AI: Executing en passant\n");
+                                    int capturedPawnRow = (aiColor == White) ? (aiMove.toRow + 1) : (aiMove.toRow - 1);
+                                    int physCapturedRow = 9 - aiMove.toCol;
+                                    int physCapturedCol = capturedPawnRow;
+                                    Color opponentColor = (aiColor == White) ? Black : White;
+                                    auto [capZoneRow, capZoneCol] = getNextCaptureSlot(opponentColor);
+
+                                    plan_move(physCapturedRow, physCapturedCol, capZoneRow, capZoneCol, false);
+                                    wait_for_movement_complete(30000);
+                                    plan_move(physFromRow, physFromCol, physToRow, physToCol, false);
+                                    wait_for_movement_complete(30000);
+                                    result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
+
+                                } else if (isCapture) {
+                                    // REGULAR CAPTURE
+                                    auto [capZoneRow, capZoneCol] = getNextCaptureSlot(targetPiece->getColor());
+                                    printf("UI AI: Capture move, target to zone (%d,%d)\n", capZoneRow, capZoneCol);
+
+                                    plan_move(physToRow, physToCol, capZoneRow, capZoneCol, false);
+                                    wait_for_movement_complete(30000);
+                                    plan_move(physFromRow, physFromCol, physToRow, physToCol, false);
+                                    wait_for_movement_complete(30000);
+                                    result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
+
+                                } else {
+                                    // REGULAR MOVE
+                                    // Check if direct path is clear using PathAnalyzer
+                                    Type pieceType = movingPiece ? movingPiece->getType() : Pawn;
+                                    PathType pathType = PathAnalyzer::analyzeMovePath(aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol, board, pieceType, false);
+                                    bool isDirect = (pathType == DIRECT_HORIZONTAL || pathType == DIRECT_VERTICAL ||
+                                                    pathType == DIAGONAL_DIRECT || pathType == DIRECT_L_PATH);
+                                    printf("UI AI: Regular move, path %s (%s)\n", isDirect ? "DIRECT" : "INDIRECT", PathAnalyzer::pathTypeToString(pathType).c_str());
+                                    plan_move(physFromRow, physFromCol, physToRow, physToCol, isDirect);
+                                    wait_for_movement_complete(30000);
+                                    result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
                                 }
+
+                                while (result != VERIFY_SUCCESS) {
+                                    ESP_LOGE("MOVE", "UI AI verification failed: %d", result);
+                                    if (result == VERIFY_SOURCE_NOT_EMPTY) {
+                                        printf("ERROR: Piece not picked up from (%d,%d) - please remove it manually\n", physFromRow, physFromCol);
+                                    } else if (result == VERIFY_DEST_NOT_OCCUPIED) {
+                                        printf("ERROR: Piece not placed at (%d,%d) - please place it manually\n", physToRow, physToCol);
+                                    } else {
+                                        printf("ERROR: UI AI move verification failed (code %d) - manual intervention required\n", result);
+                                    }
+                                    printf("Waiting for board correction... (checking every 2 seconds)\n");
+
+                                    vTaskDelay(pdMS_TO_TICKS(2000));
+                                    result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
+                                }
+                                printf("UI AI move verified successfully\n");
+
+                                // Update logical board
+                                board.setTurn(currentTurn);
+                                board.movePiece(aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
+                                printf("AI moved: (%d,%d) -> (%d,%d)\n",
+                                       aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
 
                                 currentTurn = (currentTurn == White) ? Black : White;
                                 printf("Turn changed to: %s\n", currentTurn == White ? "White" : "Black");

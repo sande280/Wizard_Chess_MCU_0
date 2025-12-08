@@ -57,11 +57,11 @@ void plan_move(int A_from, int B_from, int A_to, int B_to, bool direct) {
 
     // ---- Step 1: If direct, go straight there
     if (direct) {
-        mc = {toX, toY, 40.0f, OVERSHOOT_DIST, true};
+        mc = {toX, toY, 50.0f, OVERSHOOT_DIST, true};
         move_queue_push(&mc);
     } else {
         mc.magnet = true;
-        mc.speed = 40.0f;
+        mc.speed = 50.0f;
         mc.overshoot = OVERSHOOT_DIST;
 
         //---------------------------------------------------------
