@@ -1882,7 +1882,7 @@ void aiResponseTask(void *pvParameter) {
                        capZoneRow, capZoneCol);
 
                 // Move captured piece from destination to capture zone
-                movePieceSmart(physToRow, physToCol, capZoneRow, capZoneCol, boardPtr);
+                movePieceSmart(physToRow, physToCol, capZoneRow, capZoneCol);
                 //plan_move(physToRow, physToCol, capZoneRow, capZoneCol, false);
 
                 if (!wait_for_movement_complete(30000)) {
@@ -1908,7 +1908,7 @@ void aiResponseTask(void *pvParameter) {
                     // if (isDirect) {
                     //     plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
                     // } else {
-                        movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, boardPtr);
+                        movePieceSmart(physFromRow, physFromCol, physToRow, physToCol);
                     // }
                 }
 
@@ -1932,7 +1932,7 @@ void aiResponseTask(void *pvParameter) {
                 // if (isDirect) {
                 //     plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
                 // } else {
-                    movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, boardPtr);
+                    movePieceSmart(physFromRow, physFromCol, physToRow, physToCol);
                 //}
 
                 if (!wait_for_movement_complete(30000)) {
@@ -2132,6 +2132,7 @@ void app_main(void) {
                 // Reset board to starting position
                 board = ChessBoard(8, 8);
                 setupStandardBoard(board);
+                setupMoveTracking(&board);
 
                 // Reset capture zone counters
                 capturedWhiteCount = 0;
@@ -2331,7 +2332,7 @@ void app_main(void) {
                                    capturedPiece->getColor() == White ? "white" : "black",
                                    capZoneRow, capZoneCol);
 
-                            movePieceSmart(physToRow, physToCol, capZoneRow, capZoneCol, &board);       
+                            movePieceSmart(physToRow, physToCol, capZoneRow, capZoneCol);       
                             //plan_move(physToRow, physToCol, capZoneRow, capZoneCol, false);
 
                             if (!wait_for_movement_complete(30000)) {
@@ -2352,7 +2353,7 @@ void app_main(void) {
                                 // if (isDirect) {
                                 //     plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
                                 // } else {
-                                    movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, &board);
+                                    movePieceSmart(physFromRow, physFromCol, physToRow, physToCol);
                                 //}
                             }
 
@@ -2376,7 +2377,7 @@ void app_main(void) {
                             // if (isDirect) {
                             //     plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
                             // } else {
-                                movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, &board);
+                                movePieceSmart(physFromRow, physFromCol, physToRow, physToCol);
                             //}
 
                             if (!wait_for_movement_complete(30000)) {
@@ -2491,7 +2492,7 @@ void app_main(void) {
                                     auto [capZoneRow, capZoneCol] = getNextCaptureSlot(targetPiece->getColor());
                                     printf("UI AI: Capture move, target to zone (%d,%d)\n", capZoneRow, capZoneCol);
 
-                                    movePieceSmart(physToRow, physToCol, capZoneRow, capZoneCol, &board);
+                                    movePieceSmart(physToRow, physToCol, capZoneRow, capZoneCol);
                                     //plan_move(physToRow, physToCol, capZoneRow, capZoneCol, false);
                                     wait_for_movement_complete(30000);
 
@@ -2506,7 +2507,7 @@ void app_main(void) {
                                         // if (isDirect) {
                                         //     plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
                                         // } else {
-                                            movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, &board);
+                                            movePieceSmart(physFromRow, physFromCol, physToRow, physToCol);
                                         //}
                                     }
                                     wait_for_movement_complete(30000);
@@ -2524,7 +2525,7 @@ void app_main(void) {
                                     // if (isDirect) {
                                     //     plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
                                     // } else {
-                                        movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, &board);
+                                        movePieceSmart(physFromRow, physFromCol, physToRow, physToCol);
                                     //}
                                     wait_for_movement_complete(30000);
                                     result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);

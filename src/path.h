@@ -36,7 +36,7 @@ struct RestorationJob {
     Point dest;   // Where it belongs
 };
 
-bool board_state[BOARD_WIDTH][BOARD_HEIGHT];
+uint8_t board_state[BOARD_WIDTH][BOARD_HEIGHT] = {0};
 
 // --- Helper Functions ---
 
@@ -180,19 +180,87 @@ std::vector<Point> calculatePath(Point start, Point end) {
     return path;
 }
 
-void movePieceSmart(int startX, int startY, int endX, int endY, ChessBoard* board) {
-    Point start = {startX, startY};
-    Point end = {endX, endY};
-
-    //Update Board State
+void setupMoveTracking(ChessBoard* board)
+{
     for(int i = 0; i < 8; i++)
     {
         for(int j = 0; j < BOARD_HEIGHT; j++)
         {
             ChessPiece* piece = board->getPiece(i, j);
-            board_state[9-j][i] = (piece != nullptr);
+            if(piece != nullptr)
+            {
+                board_state[9-j][i] = (piece->getColor() == Color::Black) ? 1 : 2;
+            }
             ESP_LOGI("PATHFINDING", "Board State [%d][%d]: %d", 9-j, i, board_state[9-j][i] ? 1 : 0);
         }
+    }
+}
+
+Point findEmptyCapture(int x, int y)
+{
+    uint8_t row1, row2;
+    Point out = {-1, -1};
+    if(board_state[x][y] == 1)
+    {
+        row1 = 0;
+        row2 = 1;
+    }
+    else
+    {
+        row1 = 11;
+        row2 = 10;
+    }
+
+    //Loop through to find best side
+    if(y < 4)
+    {
+        for(int i = 0; i < 4; i++)
+        {
+            if(!board_state[row1][i])
+            {
+                out.x = row1;
+                out.y = i;
+                break;
+            }
+            else if(!board_state[row2][i])
+            {
+                out.x = row2;
+                out.y = i;
+                break;
+            }
+        }
+    }
+    else
+    {
+        for(int i = 7; i > 3; i--)
+        {
+            if(!board_state[row1][i])
+            {
+                out.x = row1;
+                out.y = i;
+                break;
+            }
+            else if(!board_state[row2][i])
+            {
+                out.x = row2;
+                out.y = i;
+                break;
+            }
+        }
+    }
+
+    return out;
+}
+
+void movePieceSmart(int startX, int startY, int endX, int endY) {
+    Point start = {startX, startY};
+    Point end = {endX, endY};
+
+    //Check if the end square is occupied (capture)
+    if(board_state[endX][endY])
+    {
+        Point captureEnd = findEmptyCapture(endX,endY);
+        movePieceSmart(endX, endY, captureEnd.x, captureEnd.y);
     }
 
     std::vector<Point> path = calculatePath(start, end);
@@ -236,10 +304,7 @@ void movePieceSmart(int startX, int startY, int endX, int endY, ChessBoard* boar
         if (isPopulated(nextStep.x, nextStep.y) && nextStep != end) {
             Point parkingSpot = findParkingBuff(nextStep, currentPos, path);
             
-            movePieceSmart(nextStep.x, nextStep.y, parkingSpot.x, parkingSpot.y, board);
-            
-            board_state[nextStep.x][nextStep.y] = false;
-            board_state[parkingSpot.x][parkingSpot.y] = true;
+            movePieceSmart(nextStep.x, nextStep.y, parkingSpot.x, parkingSpot.y);
 
             restorationQueue.push_back({parkingSpot, nextStep});
         }
@@ -247,8 +312,9 @@ void movePieceSmart(int startX, int startY, int endX, int endY, ChessBoard* boar
         // --- 4. Execute Move ---
         plan_move(currentPos.x, currentPos.y, nextStep.x, nextStep.y, true);
         
-        board_state[currentPos.x][currentPos.y] = false;
-        board_state[nextStep.x][nextStep.y] = true;
+        //Update board state
+        board_state[nextStep.x][nextStep.y] = board_state[currentPos.x][currentPos.y];
+        board_state[currentPos.x][currentPos.y] = 0;
 
         currentPos = nextStep;
     }
@@ -258,6 +324,6 @@ void movePieceSmart(int startX, int startY, int endX, int endY, ChessBoard* boar
     // We iterate backwards (LIFO) to unwind the moves.
     for (int i = restorationQueue.size() - 1; i >= 0; i--) {
         RestorationJob job = restorationQueue[i];
-        movePieceSmart(job.source.x, job.source.y, job.dest.x, job.dest.y, board);
+        movePieceSmart(job.source.x, job.source.y, job.dest.x, job.dest.y);
     }
 }
