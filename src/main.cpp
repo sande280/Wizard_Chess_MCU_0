@@ -2506,9 +2506,9 @@ void app_main(void) {
 
                         // In UI mode, if it's AI's turn, make AI move
                         if (currentMode == MODE_UI && currentTurn != playerColor) {
-                            printf("AI thinking (minimax depth 3)...\n");
+                            printf("AI thinking (minimax depth 2)...\n");
                             ChessAI ai;
-                            AIMove aiMove = ai.findBestMove(board, currentTurn, 3);
+                            AIMove aiMove = ai.findBestMove(board, currentTurn, 2);
                             if (aiMove.fromRow >= 0) {
                                 printf("AI move: (%d,%d) -> (%d,%d), score=%.2f\n",
                                        aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol, aiMove.score);
