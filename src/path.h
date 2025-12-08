@@ -257,11 +257,11 @@ void movePieceSmart(int startX, int startY, int endX, int endY) {
     Point end = {endX, endY};
 
     //Check if the end square is occupied (capture)
-    if(board_state[endX][endY])
-    {
-        Point captureEnd = findEmptyCapture(endX,endY);
-        movePieceSmart(endX, endY, captureEnd.x, captureEnd.y);
-    }
+    // if(board_state[endX][endY])
+    // {
+    //     Point captureEnd = findEmptyCapture(endX,endY);
+    //     movePieceSmart(endX, endY, captureEnd.x, captureEnd.y);
+    // }
 
     std::vector<Point> path = calculatePath(start, end);
     if (path.empty()) return;
@@ -278,8 +278,18 @@ void movePieceSmart(int startX, int startY, int endX, int endY) {
     for (size_t i = 0; i < path.size(); i++) {
         Point nextStep = path[i];
         
+        bool populated = false;
         // --- Optimization Loop ---
         while (i + 1 < path.size()) {
+            //Check if i is populated
+            if (isPopulated(nextStep.x, nextStep.y) && nextStep != end) {
+                Point parkingSpot = findParkingBuff(nextStep, currentPos, path);
+            
+                movePieceSmart(nextStep.x, nextStep.y, parkingSpot.x, parkingSpot.y);
+
+                restorationQueue.push_back({parkingSpot, nextStep});
+            }
+
             Point nextNext = path[i+1];
             int totalDx = nextNext.x - currentPos.x;
             int totalDy = nextNext.y - currentPos.y;
@@ -289,24 +299,20 @@ void movePieceSmart(int startX, int startY, int endX, int endY) {
             else if (totalDx == 0 && totalDy != 0) sameDir = true;
             else if (abs(totalDx) == abs(totalDy)) sameDir = true; 
             
-            if (sameDir && !isPopulated(nextStep.x, nextStep.y)) {
-                if (abs(totalDx) == abs(totalDy)) {
-                     if (!isDiagonalClear(nextStep, nextNext)) break; 
+            if(sameDir)
+            {
+                //Check for Diagonal
+                if(abs(totalDx) == abs(totalDy))
+                {
+                    if(!isDiagonalClear(nextStep, nextNext)) break;
                 }
                 nextStep = nextNext;
-                i++; 
-            } else {
-                break; 
+                i++;
             }
-        }
-
-        // --- 3. Obstacle Clearing ---
-        if (isPopulated(nextStep.x, nextStep.y) && nextStep != end) {
-            Point parkingSpot = findParkingBuff(nextStep, currentPos, path);
-            
-            movePieceSmart(nextStep.x, nextStep.y, parkingSpot.x, parkingSpot.y);
-
-            restorationQueue.push_back({parkingSpot, nextStep});
+            else
+            {
+                break;
+            }
         }
 
         // --- 4. Execute Move ---

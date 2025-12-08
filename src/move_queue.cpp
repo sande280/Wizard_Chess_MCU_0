@@ -1,8 +1,9 @@
 #include "move_queue.h"
 #include "freertos/semphr.h"
+#include "esp_log.h"
 
 // Simple fixed-size circular buffer
-#define MOVE_QUEUE_CAPACITY 64
+#define MOVE_QUEUE_CAPACITY 128
 
 static MoveCommand q_buf[MOVE_QUEUE_CAPACITY];
 static int q_head = 0; // index of next pop
@@ -29,6 +30,9 @@ bool move_queue_push(const MoveCommand* cmd) {
             q_tail = (q_tail + 1) % MOVE_QUEUE_CAPACITY;
             q_count++;
             ok = true;
+        }
+        else{
+            ESP_LOGI("MOVE_QUEUE", "Move queue full, cannot push new command");
         }
         xSemaphoreGive(q_mutex);
     }
