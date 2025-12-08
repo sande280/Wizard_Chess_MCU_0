@@ -19,6 +19,7 @@
 #include "driver/ledc.h"
 #include "esp_timer.h"
 #include "driver/i2c.h"
+#include "ota_server.hpp"
 
 //Chess Includes (Jackson)
 #include "Chess.h"
@@ -2180,6 +2181,9 @@ extern "C" {
 }
 
 void app_main(void) {
+    
+    start_ota_server();
+
     ESP_LOGI(TAG, "Starting ESP32 Chess Game with I2C UI Integration");
 
     led = new leds();
