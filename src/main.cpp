@@ -76,7 +76,9 @@ static move_state_t move_ctx{};
 
 bool homing_active = false;
 
-
+// Pawn promotion state variables
+volatile bool promotionPending = false;
+volatile Type promotionChoice = Queen;
 
 void setupStandardBoard(ChessBoard& board);
 bool isKingInCheck(ChessBoard& board, Color color);
@@ -845,6 +847,45 @@ void serializePossibleMovesFlipped(ChessBoard& board, int row, int col, uint8_t*
             buffer[1 + byteIndex] |= 0x0F;  // Low nibble
         }
     }
+}
+
+// Serialize board state with promotion preamble (0xCC header + 32 bytes)
+void serializeBoardStatePromotion(ChessBoard& board, uint8_t* buffer) {
+    buffer[0] = 0xCC;  // Promotion header
+    for (int i = 0; i < 32; i++) {
+        int idx = i * 2;
+        int row1 = idx / 8, col1 = idx % 8;
+        int row2 = (idx + 1) / 8, col2 = (idx + 1) % 8;
+        uint8_t high = pieceToNibble(board.getPiece(row1, col1));
+        uint8_t low = pieceToNibble(board.getPiece(row2, col2));
+        buffer[1 + i] = (high << 4) | low;
+    }
+}
+
+// Wait for UI to send promotion piece choice via I2C
+// Returns the selected piece type (defaults to Queen on timeout)
+Type waitForPromotionChoice(ChessBoard& board, uint32_t timeout_ms) {
+    // Send promotion request with board state
+    uint8_t tx_buffer[33];
+    serializeBoardStatePromotion(board, tx_buffer);
+    i2c_reset_tx_fifo(I2C_SLAVE_PORT);
+    i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, 33, pdMS_TO_TICKS(100));
+    printf("Promotion request sent (0xCC), waiting for UI response...\n");
+
+    promotionPending = true;
+    promotionChoice = Queen;  // Default to Queen
+
+    uint32_t start = xTaskGetTickCount();
+    while (promotionPending && (xTaskGetTickCount() - start) < pdMS_TO_TICKS(timeout_ms)) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+
+    if (promotionPending) {
+        printf("Promotion timeout - defaulting to Queen\n");
+        promotionPending = false;
+    }
+
+    return promotionChoice;
 }
 
 void chess_game_task(void *pvParameter) {
@@ -2220,6 +2261,29 @@ void app_main(void) {
                     led->showPossibleMoves(moves);
                 }
             }
+            // Handle CC - Promotion piece selection response from UI
+            else if (rx_buffer[0] == 0xCC && bytes_read >= 2) {
+                uint8_t pieceCode = rx_buffer[1];
+                Type selectedType = Queen; // default
+
+                switch(pieceCode) {
+                    case 2: selectedType = Rook; break;
+                    case 3: selectedType = Knight; break;
+                    case 4: selectedType = Bishop; break;
+                    case 5: selectedType = Queen; break;
+                    default:
+                        printf("Unknown promotion piece code: %d, defaulting to Queen\n", pieceCode);
+                        break;
+                }
+
+                if (promotionPending) {
+                    promotionChoice = selectedType;
+                    promotionPending = false;
+                    printf("Promotion choice received: %d -> Type %d\n", pieceCode, (int)selectedType);
+                } else {
+                    printf("Received promotion choice but no promotion pending\n");
+                }
+            }
             // Handle FF - Move execution
             else if (rx_buffer[0] == 0xFF && bytes_read >= 2) {
                 int toRow = (rx_buffer[1] >> 4) & 0x0F;
@@ -2237,6 +2301,19 @@ void app_main(void) {
                     // Detect special moves BEFORE capture check
                     bool isCastlingMoveFlag = isCastlingMove(board, selectedRow, selectedCol, toRow, toCol);
                     bool isEnPassantMoveFlag = isEnPassantMove(board, selectedRow, selectedCol, toRow, toCol);
+
+                    // Check for pawn promotion BEFORE physical movement
+                    Type promotionType = Queen;  // Default to Queen
+                    ChessPiece* movingPiece = board.getPiece(selectedRow, selectedCol);
+                    if (movingPiece && movingPiece->getType() == Pawn) {
+                        bool isPromotion = (movingPiece->getColor() == White && toRow == 0) ||
+                                          (movingPiece->getColor() == Black && toRow == 7);
+                        if (isPromotion && currentMode == MODE_UI) {
+                            printf("Pawn promotion detected! Requesting piece choice from UI...\n");
+                            promotionType = waitForPromotionChoice(board, 30000);
+                            printf("Promotion piece selected: %d\n", (int)promotionType);
+                        }
+                    }
 
                     // Check for regular capture BEFORE moving piece
                     ChessPiece* capturedPiece = board.getPiece(toRow, toCol);
@@ -2409,7 +2486,7 @@ void app_main(void) {
 
                     // Now update the logical board state
                     board.setTurn(currentTurn);
-                    if (board.movePiece(selectedRow, selectedCol, toRow, toCol)) {
+                    if (board.movePiece(selectedRow, selectedCol, toRow, toCol, false, promotionType)) {
                         printf("Move successful! %s moved from (%d,%d) to (%d,%d)\n",
                                currentTurn == White ? "White" : "Black",
                                selectedRow, selectedCol, toRow, toCol);
@@ -2429,9 +2506,9 @@ void app_main(void) {
 
                         // In UI mode, if it's AI's turn, make AI move
                         if (currentMode == MODE_UI && currentTurn != playerColor) {
-                            printf("AI thinking (minimax depth 3)...\n");
+                            printf("AI thinking (minimax depth 2)...\n");
                             ChessAI ai;
-                            AIMove aiMove = ai.findBestMove(board, currentTurn, 3);
+                            AIMove aiMove = ai.findBestMove(board, currentTurn, 2);
                             if (aiMove.fromRow >= 0) {
                                 printf("AI move: (%d,%d) -> (%d,%d), score=%.2f\n",
                                        aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol, aiMove.score);

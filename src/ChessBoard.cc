@@ -394,7 +394,7 @@ namespace Student
         return possibleMoves;
     }
 
-    bool ChessBoard::movePiece(int fromRow, int fromColumn, int toRow, int toColumn, bool isSimulation)
+    bool ChessBoard::movePiece(int fromRow, int fromColumn, int toRow, int toColumn, bool isSimulation, Type promotionType)
     {
         ChessPiece *pieceM = getPiece(fromRow, fromColumn);
         if(pieceM == nullptr) {
@@ -535,7 +535,7 @@ namespace Student
                         delete oldp;
                         board[toRow][toColumn]=nullptr;
                     }
-                    createChessPiece(pColor,Queen,toRow,toColumn);
+                    createChessPiece(pColor, promotionType, toRow, toColumn);
                 }
             }
             else
