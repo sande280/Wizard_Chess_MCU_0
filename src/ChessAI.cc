@@ -134,6 +134,12 @@ float ChessAI::evaluate(ChessBoard& board, Color perspective) {
         }
     }
 
+    // Bonus for putting opponent in check (encourages aggressive play toward checkmate)
+    Color opponent = (perspective == White) ? Black : White;
+    if (board.isKingInCheck(opponent)) {
+        score += 0.5f;
+    }
+
     return score;
 }
 
@@ -169,6 +175,14 @@ float ChessAI::minimax(ChessBoard& board, int depth, float alpha, float beta,
 
 
     if (allMoves.empty()) {
+        // Check if it's checkmate or stalemate
+        if (board.isKingInCheck(currentPlayer)) {
+            // Checkmate! Return extreme score
+            // If maximizing player is checkmated, that's very bad for them
+            // If minimizing player is checkmated, that's very good for maximizing
+            return maximizing ? -100000.0f : 100000.0f;
+        }
+        // Stalemate - draw
         return 0.0f;
     }
 

@@ -653,9 +653,9 @@ namespace Student
 
     bool ChessBoard::isKingInCheck(Color color)
     {
-        // kingSafeQ returns true if king is safe (not in check)
-        // So isKingInCheck is the opposite
-        return !kingSafeQ(color);
+        // kingSafeQ returns true if king IS under threat (in check)
+        // despite the misleading name
+        return kingSafeQ(color);
     }
 
     bool ChessBoard::hasValidMoves(Color color)

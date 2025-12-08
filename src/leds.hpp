@@ -20,6 +20,30 @@
 #define INVERT_X 1
 #define INVERT_Y 1
 
+// LED Color Constants
+#define LED_GREEN_R 0
+#define LED_GREEN_G 255
+#define LED_GREEN_B 0
+
+#define LED_WHITE_R 255
+#define LED_WHITE_G 255
+#define LED_WHITE_B 255
+
+#define LED_BLUE_R 0
+#define LED_BLUE_G 0
+#define LED_BLUE_B 255
+
+#define LED_OFF_R 0
+#define LED_OFF_G 0
+#define LED_OFF_B 0
+
+#define LED_RED_R 255
+#define LED_RED_G 0
+#define LED_RED_B 0
+
+// Forward declaration
+namespace Student { class ChessBoard; }
+
 class leds
 {
 private:
@@ -52,6 +76,39 @@ public:
      * Clear all LEDs on the main board area (rows 2-9)
      */
     void clearPossibleMoves();
+
+    /**
+     * Show board setup state - RED for occupied starting squares
+     * @param reedGrid 12-byte array of reed switch states
+     */
+    void showBoardSetupState(uint8_t reedGrid[12]);
+
+    /**
+     * Show board ready state - all starting squares GREEN
+     */
+    void showBoardReady();
+
+    /**
+     * Show WHITE ambient lighting under all pieces on the board
+     * @param board Reference to the chess board
+     */
+    void showAmbientWhite(Student::ChessBoard& board);
+
+    /**
+     * Show BLUE LED on the selected piece's source square
+     * @param chessRow Chess row (0-7)
+     * @param chessCol Chess column (0-7)
+     */
+    void showPieceSelected(int chessRow, int chessCol);
+
+    /**
+     * Show piece selected (BLUE) and possible moves (GREEN) together
+     * Clears board first, then shows BLUE on source and GREEN on destinations
+     * @param chessRow Source chess row (0-7)
+     * @param chessCol Source chess column (0-7)
+     * @param moves Vector of valid move destinations in chess coordinates
+     */
+    void showPiecePickup(int chessRow, int chessCol, const std::vector<std::pair<int, int>>& moves);
 
 };
 
