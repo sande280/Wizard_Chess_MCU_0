@@ -651,14 +651,26 @@ static int capturedBlackCount = 0;  // Black pieces captured, go to rows 0-1
 // Get next available capture zone slot for a captured piece
 std::pair<int, int> getNextCaptureSlot(Color capturedPieceColor) {
     if (capturedPieceColor == White) {
-        // White pieces go to rows 10-11
-        int slot = capturedWhiteCount++;
+        // White pieces go to rows 10-11 (max 16 slots)
+        int slot = capturedWhiteCount;
+        if (slot >= 16) {
+            printf("WARNING: White capture zone full, reusing last slot\n");
+            slot = 15;  // Reuse last slot if overflow
+        } else {
+            capturedWhiteCount++;
+        }
         int row = 10 + (slot / 8);  // Row 10, then 11
         int col = slot % 8;
         return {row, col};
     } else {
-        // Black pieces go to rows 0-1
-        int slot = capturedBlackCount++;
+        // Black pieces go to rows 0-1 (max 16 slots)
+        int slot = capturedBlackCount;
+        if (slot >= 16) {
+            printf("WARNING: Black capture zone full, reusing last slot\n");
+            slot = 15;  // Reuse last slot if overflow
+        } else {
+            capturedBlackCount++;
+        }
         int row = slot / 8;  // Row 0, then 1
         int col = slot % 8;
         return {row, col};
@@ -1880,8 +1892,9 @@ void piecePickupDetectionTask(void *pvParameter) {
             }
         }
 
-        // Detect capture zone placements (for tracking where user places captured pieces)
-        // Check capture zones: rows 0-1 (black captures) and 10-11 (white captures)
+        // Detect capture zone placements (for debug logging only)
+        // Note: Counter increments are handled in getNextCaptureSlot(), not here
+        // This detection fires spuriously when the electromagnet passes through
         for (int physRow = 0; physRow < 2; physRow++) {
             uint8_t prev = prevReedGrid[physRow];
             uint8_t curr = switches->grid[physRow];
@@ -1890,7 +1903,7 @@ void piecePickupDetectionTask(void *pvParameter) {
                 for (int col = 0; col < 8; col++) {
                     if (placed & (1 << col)) {
                         printf("Captured piece placed at black zone (%d, %d)\n", physRow, col);
-                        capturedBlackCount++;
+                        // Don't increment here - getNextCaptureSlot handles it
                     }
                 }
             }
@@ -1903,7 +1916,7 @@ void piecePickupDetectionTask(void *pvParameter) {
                 for (int col = 0; col < 8; col++) {
                     if (placed & (1 << col)) {
                         printf("Captured piece placed at white zone (%d, %d)\n", physRow, col);
-                        capturedWhiteCount++;
+                        // Don't increment here - getNextCaptureSlot handles it
                     }
                 }
             }
