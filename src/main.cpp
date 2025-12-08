@@ -641,6 +641,8 @@ static volatile bool aiMoveRequested = false;
 // Flags for real-time reed switch LED display (White player, before first move)
 static volatile bool showReedStateMode = false;
 static volatile bool firstMoveMade = false;
+static volatile bool boardSetupComplete = false;  // All 32 starting positions occupied
+static volatile bool pieceHeld = false;           // Piece currently being held (lifted from board)
 
 // Capture zone slot tracking
 static int capturedWhiteCount = 0;  // White pieces captured, go to rows 10-11
@@ -728,6 +730,37 @@ void waitForBoardSetup() {
     if (led) led->clearPossibleMoves();  // Turn off LEDs
 }
 
+// Check if all 32 starting positions are occupied (non-blocking check)
+bool allStartingPositionsOccupied() {
+    if (switches == nullptr) return false;
+
+    int count = 0;
+
+    // Check chess rows 0, 1 (black pieces)
+    for (int chessRow = 0; chessRow < 2; chessRow++) {
+        for (int chessCol = 0; chessCol < 8; chessCol++) {
+            int physRow = 9 - chessCol;
+            int physCol = chessRow;
+            if (switches->grid[physRow] & (1 << physCol)) {
+                count++;
+            }
+        }
+    }
+
+    // Check chess rows 6, 7 (white pieces)
+    for (int chessRow = 6; chessRow < 8; chessRow++) {
+        for (int chessCol = 0; chessCol < 8; chessCol++) {
+            int physRow = 9 - chessCol;
+            int physCol = chessRow;
+            if (switches->grid[physRow] & (1 << physCol)) {
+                count++;
+            }
+        }
+    }
+
+    return count >= 32;
+}
+
 static void i2c_slave_init(void)
 {
     i2c_config_t conf = {
@@ -802,6 +835,32 @@ void serializeBoardStateFlipped(ChessBoard& board, uint8_t* buffer) {
 // Serialize board state flipped with game-over preamble (0x2F header)
 void serializeBoardStateFlippedGameOver(ChessBoard& board, uint8_t* buffer) {
     buffer[0] = 0x2F;  // Game-over header
+    for (int i = 0; i < 32; i++) {
+        int idx = i * 2;
+        int row1 = 7 - (idx / 8), col1 = 7 - (idx % 8);
+        int row2 = 7 - ((idx + 1) / 8), col2 = 7 - ((idx + 1) % 8);
+        uint8_t high = pieceToNibble(board.getPiece(row1, col1));
+        uint8_t low = pieceToNibble(board.getPiece(row2, col2));
+        buffer[1 + i] = (high << 4) | low;
+    }
+}
+
+// Serialize board state with stalemate preamble (0xEE)
+void serializeBoardStateStalemate(ChessBoard& board, uint8_t* buffer) {
+    buffer[0] = 0xEE;  // Stalemate header
+    for (int i = 0; i < 32; i++) {
+        int idx = i * 2;
+        int row1 = idx / 8, col1 = idx % 8;
+        int row2 = (idx + 1) / 8, col2 = (idx + 1) % 8;
+        uint8_t high = pieceToNibble(board.getPiece(row1, col1));
+        uint8_t low = pieceToNibble(board.getPiece(row2, col2));
+        buffer[1 + i] = (high << 4) | low;
+    }
+}
+
+// Serialize board state flipped with stalemate preamble (0xEE)
+void serializeBoardStateFlippedStalemate(ChessBoard& board, uint8_t* buffer) {
+    buffer[0] = 0xEE;  // Stalemate header
     for (int i = 0; i < 32; i++) {
         int idx = i * 2;
         int row1 = 7 - (idx / 8), col1 = 7 - (idx % 8);
@@ -1661,19 +1720,23 @@ void piecePickupDetectionTask(void *pvParameter) {
         // Read current reed switch state
         switches->read_matrix();
 
-        // Real-time reed switch LED display (White player, before first move)
-        if (showReedStateMode && !firstMoveMade && playerColor == White && led != nullptr) {
-            // Update LEDs to show current reed switch states for main board
-            for (int physRow = 2; physRow < 10; physRow++) {
-                for (int physCol = 0; physCol < 8; physCol++) {
-                    if (switches->grid[physRow] & (1 << physCol)) {
-                        led->update_led(physRow, physCol, 0, 255, 0);  // Green for detected
-                    } else {
-                        led->update_led(physRow, physCol, 0, 0, 0);    // Off for empty
-                    }
+        // Real-time reed switch LED display (before first move)
+        // Only update if no piece is being held (to avoid overwriting BLUE/GREEN pickup display)
+        if (showReedStateMode && !firstMoveMade && !pieceHeld && led != nullptr) {
+            if (!boardSetupComplete) {
+                // Show RED for occupied squares during board setup
+                led->showBoardSetupState(switches->grid);
+
+                // Check if all starting positions are now occupied
+                if (allStartingPositionsOccupied()) {
+                    boardSetupComplete = true;
+                    printf("Board setup complete! All 32 pieces detected. Game can begin.\n");
+                    // Show GREEN to indicate ready
+                    led->showBoardReady();
                 }
             }
-            led->refresh();
+            // When boardSetupComplete but not firstMoveMade, keep GREEN displayed
+            // (showBoardReady was called once, LEDs stay that way until piece pickup)
         }
 
         // Initialize previous state on first run
@@ -1684,8 +1747,17 @@ void piecePickupDetectionTask(void *pvParameter) {
             continue;
         }
 
-        // Only process in physical mode when no piece is already selected
-        if (currentMode == MODE_PHYSICAL && selectedRow < 0) {
+        // Only process in physical mode when board setup complete AND it's player's turn
+        // This prevents detecting AI's physical piece movements as player moves
+        if (currentMode == MODE_PHYSICAL && boardSetupComplete && currentTurn == playerColor) {
+            // Debug: periodic state output
+            static int pickupDebugCounter = 0;
+            if (++pickupDebugCounter >= 30) {  // Every 3 seconds
+                pickupDebugCounter = 0;
+                printf("Pickup state: selRow=%d turn=%d playerCol=%d pieceHeld=%d\n",
+                       selectedRow, currentTurn, playerColor, pieceHeld ? 1 : 0);
+            }
+
             // Check main board area (physical rows 2-9 = chess cols 7-0)
             // Coordinate mapping (matching LEDs): physRow = 9 - chessCol, physCol = chessRow
             for (int physRow = 2; physRow < 10; physRow++) {
@@ -1694,9 +1766,10 @@ void piecePickupDetectionTask(void *pvParameter) {
                 uint8_t curr = switches->grid[physRow];
 
                 // Detect piece lifted: was present (1), now absent (0)
+                // Only detect if no piece is currently selected
                 uint8_t lifted = prev & ~curr;
 
-                if (lifted) {
+                if (lifted && selectedRow < 0) {
                     for (int physCol = 0; physCol < 8; physCol++) {
                         if (lifted & (1 << physCol)) {
                             int chessRow = physCol;  // Physical column maps to chess row
@@ -1707,13 +1780,21 @@ void piecePickupDetectionTask(void *pvParameter) {
                             if (piece && piece->getColor() == currentTurn) {
                                 auto moves = boardPtr->getPossibleMoves(chessRow, chessCol);
 
+                                // Mark piece as held to prevent LED overwriting
+                                pieceHeld = true;
+
                                 if (led != nullptr && !moves.empty()) {
-                                    led->showPossibleMoves(moves);
+                                    // Show BLUE on source square, GREEN on valid destinations
+                                    led->showPiecePickup(chessRow, chessCol, moves);
                                 }
 
                                 selectedRow = chessRow;
                                 selectedCol = chessCol;
                                 printf("Selected piece for physical move\n");
+                            } else {
+                                // Debug: explain why piece wasn't selected
+                                printf("Pickup rejected: piece=%p, currentTurn=%d, pieceColor=%d\n",
+                                       piece, currentTurn, piece ? piece->getColor() : -1);
                             }
                         }
                     }
@@ -1730,14 +1811,25 @@ void piecePickupDetectionTask(void *pvParameter) {
 
                             printf("Physical placement detected at (%d, %d)\n", destRow, destCol);
 
-                            if (led != nullptr) {
-                                led->clearPossibleMoves();
-                            }
+                            // Piece is no longer held
+                            pieceHeld = false;
 
                             boardPtr->setTurn(currentTurn);
                             if (boardPtr->movePiece(selectedRow, selectedCol, destRow, destCol)) {
                                 printf("Physical move successful: (%d,%d) -> (%d,%d)\n",
                                        selectedRow, selectedCol, destRow, destCol);
+
+                                // Mark first move as made and show WHITE ambient
+                                if (!firstMoveMade) {
+                                    firstMoveMade = true;
+                                    printf("First move made - transitioning to WHITE ambient\n");
+                                }
+
+                                // Show WHITE ambient under all pieces
+                                if (led != nullptr) {
+                                    led->showAmbientWhite(*boardPtr);
+                                }
+
                                 currentTurn = (currentTurn == White) ? Black : White;
 
                                 // Signal AI to respond if it's now computer's turn
@@ -1747,6 +1839,15 @@ void piecePickupDetectionTask(void *pvParameter) {
                                 }
                             } else {
                                 printf("Physical move invalid - piece returned?\n");
+                                // Restore appropriate LED state if move failed
+                                if (led != nullptr) {
+                                    if (firstMoveMade) {
+                                        led->showAmbientWhite(*boardPtr);
+                                    } else {
+                                        // Still in setup/ready phase - restore GREEN
+                                        led->showBoardReady();
+                                    }
+                                }
                             }
 
                             selectedRow = selectedCol = -1;
@@ -2005,16 +2106,34 @@ void aiResponseTask(void *pvParameter) {
             boardPtr->setTurn(currentTurn);
             boardPtr->movePiece(aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
 
-            // Check for game over
+            // Update ambient lighting after AI move
+            if (led != nullptr && firstMoveMade) {
+                led->showAmbientWhite(*boardPtr);
+            }
+
+            // Check for game over (checkmate or stalemate)
             Color opponent = (currentTurn == White) ? Black : White;
-            if (boardPtr->isKingInCheck(opponent) && !boardPtr->hasValidMoves(opponent)) {
-                printf("Checkmate! %s wins!\n", (currentTurn == White) ? "White" : "Black");
-                // Send game-over to UI (flipped for black player)
+            bool oppInCheck = boardPtr->isKingInCheck(opponent);
+            bool oppCanMove = boardPtr->hasValidMoves(opponent);
+
+            if (!oppCanMove) {
                 uint8_t gameOverBuffer[33];
-                if (playerColor == Black) {
-                    serializeBoardStateFlippedGameOver(*boardPtr, gameOverBuffer);
+                if (oppInCheck) {
+                    // Checkmate - use 0x2F
+                    printf("Checkmate! %s wins!\n", (currentTurn == White) ? "White" : "Black");
+                    if (playerColor == Black) {
+                        serializeBoardStateFlippedGameOver(*boardPtr, gameOverBuffer);
+                    } else {
+                        serializeBoardStateGameOver(*boardPtr, gameOverBuffer);
+                    }
                 } else {
-                    serializeBoardStateGameOver(*boardPtr, gameOverBuffer);
+                    // Stalemate - use 0xEE
+                    printf("Stalemate! Game is a draw.\n");
+                    if (playerColor == Black) {
+                        serializeBoardStateFlippedStalemate(*boardPtr, gameOverBuffer);
+                    } else {
+                        serializeBoardStateStalemate(*boardPtr, gameOverBuffer);
+                    }
                 }
                 i2c_slave_write_buffer(I2C_SLAVE_PORT, gameOverBuffer, 33, pdMS_TO_TICKS(100));
             }
@@ -2188,11 +2307,15 @@ void app_main(void) {
                 if (playerColor == White) {
                     showReedStateMode = true;
                     firstMoveMade = false;
-                    printf("Board ready - reed switch states will be shown via LEDs\n");
+                    boardSetupComplete = false;  // Reset - wait for all pieces to be placed
+                    pieceHeld = false;
+                    printf("Board ready - place all pieces. LEDs will show RED, GREEN when ready.\n");
                 } else {
                     showReedStateMode = false;
                     firstMoveMade = false;
-                    printf("Board ready - AI will make first move\n");
+                    boardSetupComplete = false;  // Reset - wait for all pieces to be placed
+                    pieceHeld = false;
+                    printf("Board ready - place all pieces. AI will make first move after setup.\n");
                 }
 
                 // When player is black, AI (white) makes the first move
@@ -2606,7 +2729,7 @@ void app_main(void) {
                                     // if (isDirect) {
                                     //     plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
                                     // } else {
-                                        movePieceSmart(physFromRow, physFromCol, physToRow, physToCol);
+                                    movePieceSmart(physFromRow, physFromCol, physToRow, physToCol);
                                     //}
                                     wait_for_movement_complete(30000);
                                     result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
@@ -2658,6 +2781,8 @@ void app_main(void) {
                 bool gameOver = false;
                 bool inCheck = isKingInCheck(board, currentTurn);
                 bool canMove = hasValidMoves(board, currentTurn);
+                //bool inCheck = false;
+                //bool canMove = false;
 
                 if (!canMove) {
                     gameOver = true;
@@ -2676,15 +2801,26 @@ void app_main(void) {
                 i2c_reset_tx_fifo(I2C_SLAVE_PORT);
                 vTaskDelay(pdMS_TO_TICKS(100));
 
-                // Use game-over preamble (0x2F) if game ended, otherwise normal (0xAA)
+                // Use game-over preamble (0x2F for checkmate, 0xEE for stalemate)
                 // Use flipped version for black player perspective
                 if (gameOver) {
-                    if (playerColor == Black) {
-                        serializeBoardStateFlippedGameOver(board, tx_buffer);
+                    if (inCheck) {
+                        // Checkmate - use 0x2F
+                        if (playerColor == Black) {
+                            serializeBoardStateFlippedGameOver(board, tx_buffer);
+                        } else {
+                            serializeBoardStateGameOver(board, tx_buffer);
+                        }
+                        printf("Sent CHECKMATE board state with 0x2F preamble (33 bytes): ");
                     } else {
-                        serializeBoardStateGameOver(board, tx_buffer);
+                        // Stalemate - use 0xEE
+                        if (playerColor == Black) {
+                            serializeBoardStateFlippedStalemate(board, tx_buffer);
+                        } else {
+                            serializeBoardStateStalemate(board, tx_buffer);
+                        }
+                        printf("Sent STALEMATE board state with 0xEE preamble (33 bytes): ");
                     }
-                    printf("Sent GAME-OVER board state with 0x2F preamble (33 bytes): ");
                 } else {
                     if (playerColor == Black) {
                         serializeBoardStateFlipped(board, tx_buffer);
