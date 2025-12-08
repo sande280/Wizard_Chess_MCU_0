@@ -1813,10 +1813,33 @@ void piecePickupDetectionTask(void *pvParameter) {
                             // Piece is no longer held
                             pieceHeld = false;
 
+                            // Check if this is a capture move - enemy piece at destination
+                            ChessPiece* targetPiece = boardPtr->getPiece(destRow, destCol);
+                            if (targetPiece != nullptr) {
+                                // This is a capture - move captured piece to capture zone FIRST
+                                Color capturedColor = targetPiece->getColor();
+                                auto [capZoneRow, capZoneCol] = getNextCaptureSlot(capturedColor);
+
+                                // Convert destination chess coords to physical coords
+                                int physDestRow = 9 - destCol;
+                                int physDestCol = destRow;
+
+                                printf("Capture detected! Moving %s piece from (%d,%d) to capture zone (%d,%d)\n",
+                                       capturedColor == White ? "White" : "Black",
+                                       physDestRow, physDestCol, capZoneRow, capZoneCol);
+
+                                // Move captured piece to capture zone
+                                movePieceSmart(physDestRow, physDestCol, capZoneRow, capZoneCol);
+                                wait_for_movement_complete(30000);
+                            }
+
                             boardPtr->setTurn(currentTurn);
                             if (boardPtr->movePiece(selectedRow, selectedCol, destRow, destCol)) {
                                 printf("Physical move successful: (%d,%d) -> (%d,%d)\n",
                                        selectedRow, selectedCol, destRow, destCol);
+
+                                // Re-sync board_state for pathfinding after player move
+                                setupMoveTracking(boardPtr);
 
                                 // Mark first move as made and show WHITE ambient
                                 if (!firstMoveMade) {
@@ -2105,6 +2128,9 @@ void aiResponseTask(void *pvParameter) {
             boardPtr->setTurn(currentTurn);
             boardPtr->movePiece(aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
 
+            // Re-sync board_state for pathfinding after AI move
+            setupMoveTracking(boardPtr);
+
             // Update ambient lighting after AI move
             if (led != nullptr && firstMoveMade) {
                 led->showAmbientWhite(*boardPtr);
@@ -2298,20 +2324,32 @@ void app_main(void) {
                 capturedWhiteCount = 0;
                 capturedBlackCount = 0;
 
-                // Non-blocking: Enable real-time reed LED display for White player
-                // (no longer waiting for all 32 pieces - allows testing with partial setup)
-                if (playerColor == White) {
-                    showReedStateMode = true;
-                    firstMoveMade = false;
-                    boardSetupComplete = false;  // Reset - wait for all pieces to be placed
-                    pieceHeld = false;
-                    printf("Board ready - place all pieces. LEDs will show RED, GREEN when ready.\n");
-                } else {
+                // Setup LED display based on mode
+                if (currentMode == MODE_UI) {
+                    // UI mode: Show WHITE ambient immediately (no setup phase needed)
                     showReedStateMode = false;
-                    firstMoveMade = false;
-                    boardSetupComplete = false;  // Reset - wait for all pieces to be placed
+                    firstMoveMade = true;  // Skip setup phase for UI mode
+                    boardSetupComplete = true;
                     pieceHeld = false;
-                    printf("Board ready - place all pieces. AI will make first move after setup.\n");
+                    if (led != nullptr) {
+                        led->showAmbientWhite(board);
+                    }
+                    printf("UI mode: Showing ambient white lighting.\n");
+                } else {
+                    // Physical mode: Enable real-time reed LED display
+                    if (playerColor == White) {
+                        showReedStateMode = true;
+                        firstMoveMade = false;
+                        boardSetupComplete = false;  // Reset - wait for all pieces to be placed
+                        pieceHeld = false;
+                        printf("Board ready - place all pieces. LEDs will show RED/GREEN for setup.\n");
+                    } else {
+                        showReedStateMode = false;
+                        firstMoveMade = false;
+                        boardSetupComplete = false;  // Reset - wait for all pieces to be placed
+                        pieceHeld = false;
+                        printf("Board ready - place all pieces. AI will make first move after setup.\n");
+                    }
                 }
 
                 // When player is black, AI (white) makes the first move
@@ -2327,6 +2365,11 @@ void app_main(void) {
                             printf("AI opening move: (%d,%d) -> (%d,%d)\n",
                                    aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
                             currentTurn = Black;  // Now it's human's (black's) turn
+
+                            // Show WHITE ambient under all pieces after AI's first move
+                            if (led != nullptr) {
+                                led->showAmbientWhite(board);
+                            }
                         }
                     } else {
                         // Physical mode: Signal AI task to make first move
@@ -2379,9 +2422,9 @@ void app_main(void) {
                 }
                 printf("\n");
 
-                // Light up LEDs on physical board to show possible moves
-                if (led != nullptr) {
-                    led->showPossibleMoves(moves);
+                // Light up LEDs: BLUE on selected piece, GREEN on possible moves
+                if (led != nullptr && piece != nullptr) {
+                    led->showPiecePickup(row, col, moves);
                 }
             }
             // Handle CC - Promotion piece selection response from UI
@@ -2627,6 +2670,11 @@ void app_main(void) {
                         currentTurn = (currentTurn == White) ? Black : White;
                         printf("Turn changed to: %s\n", currentTurn == White ? "White" : "Black");
 
+                        // Show WHITE ambient under all pieces after move
+                        if (led != nullptr) {
+                            led->showAmbientWhite(board);
+                        }
+
                         // In UI mode, if it's AI's turn, make AI move
                         if (currentMode == MODE_UI && currentTurn != playerColor) {
                             printf("AI thinking (minimax depth 2)...\n");
@@ -2755,6 +2803,11 @@ void app_main(void) {
 
                                 currentTurn = (currentTurn == White) ? Black : White;
                                 printf("Turn changed to: %s\n", currentTurn == White ? "White" : "Black");
+
+                                // Show WHITE ambient under all pieces after AI move
+                                if (led != nullptr) {
+                                    led->showAmbientWhite(board);
+                                }
                             } else {
                                 printf("AI has no valid moves!\n");
                             }
