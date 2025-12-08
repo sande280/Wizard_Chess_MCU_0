@@ -1904,11 +1904,11 @@ void aiResponseTask(void *pvParameter) {
                                     pathType == DIAGONAL_DIRECT || pathType == DIRECT_L_PATH);
                     printf("AI: Capture move, path %s (%s)\n", isDirect ? "DIRECT" : "INDIRECT", PathAnalyzer::pathTypeToString(pathType).c_str());
 
-                    if (isDirect) {
-                        plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
-                    } else {
-                        movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, *boardPtr);
-                    }
+                    // if (isDirect) {
+                    //     plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
+                    // } else {
+                        movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, boardPtr);
+                    // }
                 }
 
                 if (!wait_for_movement_complete(30000)) {
@@ -1928,11 +1928,11 @@ void aiResponseTask(void *pvParameter) {
                                 pathType == DIAGONAL_DIRECT || pathType == DIRECT_L_PATH);
                 printf("AI: Regular move, path %s (%s)\n", isDirect ? "DIRECT" : "INDIRECT", PathAnalyzer::pathTypeToString(pathType).c_str());
 
-                if (isDirect) {
-                    plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
-                } else {
-                    movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, *boardPtr);
-                }
+                // if (isDirect) {
+                //     plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
+                // } else {
+                    movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, boardPtr);
+                //}
 
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI move timed out\n");
@@ -2347,11 +2347,11 @@ void app_main(void) {
                                                 pathType == DIAGONAL_DIRECT || pathType == DIRECT_L_PATH);
                                 printf("Player: Capture move, path %s (%s)\n", isDirect ? "DIRECT" : "INDIRECT", PathAnalyzer::pathTypeToString(pathType).c_str());
 
-                                if (isDirect) {
-                                    plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
-                                } else {
-                                    movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, board);
-                                }
+                                // if (isDirect) {
+                                //     plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
+                                // } else {
+                                    movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, &board);
+                                //}
                             }
 
                             if (!wait_for_movement_complete(30000)) {
@@ -2371,11 +2371,11 @@ void app_main(void) {
                                             pathType == DIAGONAL_DIRECT || pathType == DIRECT_L_PATH);
                             printf("Player: Regular move, path %s (%s)\n", isDirect ? "DIRECT" : "INDIRECT", PathAnalyzer::pathTypeToString(pathType).c_str());
 
-                            if (isDirect) {
-                                plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
-                            } else {
-                                movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, board);
-                            }
+                            // if (isDirect) {
+                            //     plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
+                            // } else {
+                                movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, &board);
+                            //}
 
                             if (!wait_for_movement_complete(30000)) {
                                 ESP_LOGE("MOVE", "Movement timeout - manual intervention required");
@@ -2503,7 +2503,7 @@ void app_main(void) {
                                         if (isDirect) {
                                             plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
                                         } else {
-                                            movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, board);
+                                            movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, &board);
                                         }
                                     }
                                     wait_for_movement_complete(30000);
@@ -2521,7 +2521,7 @@ void app_main(void) {
                                     if (isDirect) {
                                         plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
                                     } else {
-                                        movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, board);
+                                        movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, &board);
                                     }
                                     wait_for_movement_complete(30000);
                                     result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);

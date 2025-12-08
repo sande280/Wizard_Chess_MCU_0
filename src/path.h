@@ -4,6 +4,7 @@
 #include <cmath>
 #include "reed.hpp"
 #include "motionPos.h"
+#include "ChessBoard.hh"
 
 // --- Definitions ---
 #define BOARD_WIDTH  12
@@ -12,8 +13,12 @@
 // --- Costs for Pathfinding ---
 #define COST_STRAIGHT       10
 #define COST_DIAGONAL       14
-#define PENALTY_OCCUPIED    60
-#define PENALTY_SQUEEZE     100
+#define PENALTY_OCCUPIED    500
+#define PENALTY_SQUEEZE     1000
+
+using namespace Student;
+using namespace std;
+
 
 struct Point {
     int x;
@@ -27,7 +32,7 @@ struct Point {
     }
 };
 
-extern bool board_state[BOARD_WIDTH][BOARD_HEIGHT];
+bool board_state[BOARD_WIDTH][BOARD_HEIGHT];
 
 // --- Helper Functions ---
 
@@ -159,9 +164,19 @@ std::vector<Point> calculatePath(Point start, Point end) {
     return path;
 }
 
-void movePieceSmart(int startX, int startY, int endX, int endY) {
+void movePieceSmart(int startX, int startY, int endX, int endY, ChessBoard* board) {
     Point start = {startX, startY};
     Point end = {endX, endY};
+
+    //Update Board State
+    for(int i = 0; i < 8; i++)
+    {
+        for(int j = 0; j < BOARD_HEIGHT; j++)
+        {
+            ChessPiece* piece = board->getPiece(i, j);
+            board_state[i][j] = (piece != nullptr);
+        }
+    }
 
     std::vector<Point> path = calculatePath(start, end);
     if (path.empty()) return;
