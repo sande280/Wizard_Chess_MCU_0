@@ -1754,6 +1754,17 @@ void piecePickupDetectionTask(void *pvParameter) {
             // (showBoardReady was called once, LEDs stay that way until piece pickup)
         }
 
+        // Maintain WHITE ambient during gameplay when no piece is held
+        // This ensures the white lights stay on between turns
+        // Uses reed switch readings so only squares with detected pieces light up
+        if (currentMode == MODE_PHYSICAL && firstMoveMade && !pieceHeld && led != nullptr) {
+            static int ambientRefreshCounter = 0;
+            if (++ambientRefreshCounter >= 5) {  // Refresh every ~500ms (5 * 100ms) for responsiveness
+                ambientRefreshCounter = 0;
+                led->showAmbientWhiteFromReed(switches->grid);
+            }
+        }
+
         // Initialize previous state on first run
         if (!reedGridInitialized) {
             memcpy(prevReedGrid, switches->grid, 12);

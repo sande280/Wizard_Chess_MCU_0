@@ -95,6 +95,13 @@ public:
     void showAmbientWhite(Student::ChessBoard& board);
 
     /**
+     * Show WHITE ambient lighting based on reed switch readings
+     * Only lights up squares where reed switches detect a piece
+     * @param reedGrid 12-byte array of reed switch states
+     */
+    void showAmbientWhiteFromReed(uint8_t reedGrid[12]);
+
+    /**
      * Show BLUE LED on the selected piece's source square
      * @param chessRow Chess row (0-7)
      * @param chessCol Chess column (0-7)

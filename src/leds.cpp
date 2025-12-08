@@ -171,6 +171,28 @@ void leds::showAmbientWhite(Student::ChessBoard& board)
     refresh();
 }
 
+void leds::showAmbientWhiteFromReed(uint8_t reedGrid[12])
+{
+    // First clear the main board area
+    for (int physRow = 2; physRow < 10; physRow++) {
+        for (int col = 0; col < 8; col++) {
+            update_led(physRow, col, LED_OFF_R, LED_OFF_G, LED_OFF_B);
+        }
+    }
+
+    // Light up WHITE only where reed switches detect a piece
+    for (int physRow = 2; physRow < 10; physRow++) {
+        uint8_t rowData = reedGrid[physRow];
+        for (int col = 0; col < 8; col++) {
+            if (rowData & (1 << col)) {
+                // Reed switch shows piece present - light WHITE
+                update_led(physRow, col, LED_WHITE_R, LED_WHITE_G, LED_WHITE_B);
+            }
+        }
+    }
+    refresh();
+}
+
 void leds::showPieceSelected(int chessRow, int chessCol)
 {
     // Convert chess coords to physical coords
