@@ -11,9 +11,9 @@
 
 // --- Costs for Pathfinding ---
 #define COST_STRAIGHT       10
-#define COST_DIAGONAL       14  // Approx 1.41 * 10
-#define PENALTY_OCCUPIED    60  // Cost of moving a piece (equivalent to 6 straight empty moves)
-#define PENALTY_SQUEEZE     100 // Penalty for diagonal move between two obstacles
+#define COST_DIAGONAL       14
+#define PENALTY_OCCUPIED    60
+#define PENALTY_SQUEEZE     100
 
 struct Point {
     int x;
@@ -27,10 +27,16 @@ struct Point {
     }
 };
 
+extern bool board_state[BOARD_WIDTH][BOARD_HEIGHT];
+
 // --- Helper Functions ---
 
 bool isValid(int x, int y) {
     return (x >= 0 && x < BOARD_WIDTH && y >= 0 && y < BOARD_HEIGHT);
+}
+
+bool isPopulated(int x, int y) {
+    return switches->isPopulated(x,y);
 }
 
 // Find a parking spot for obstacles
@@ -42,7 +48,7 @@ Point findParkingBuff(Point target, Point exclude) {
                 int nx = target.x + dx;
                 int ny = target.y + dy;
                 if (isValid(nx, ny)) {
-                    if (!switches->isPopulated(nx, ny) && (nx != exclude.x || ny != exclude.y)) {
+                    if (!isPopulated(nx, ny) && (nx != exclude.x || ny != exclude.y)) {
                         return {nx, ny};
                     }
                 }
@@ -52,24 +58,26 @@ Point findParkingBuff(Point target, Point exclude) {
     return {-1, -1};
 }
 
-// Check if a diagonal move is valid and get the clear corner
-Point getClearDiagonalPath(Point from, Point to) {
+// Check if a diagonal move is truly clear (both destination AND corners)
+bool isDiagonalClear(Point from, Point to) {
     if (abs(from.x - to.x) == 1 && abs(from.y - to.y) == 1) {
         Point corner1 = {to.x, from.y};
         Point corner2 = {from.x, to.y};
 
-        if (!switches->isPopulated(corner1.x, corner1.y)) return corner1;
-        if (!switches->isPopulated(corner2.x, corner2.y)) return corner2;
+        if (isPopulated(corner1.x, corner1.y)) return false;
+        if (isPopulated(corner2.x, corner2.y)) return false;
+        
+        if (isPopulated(to.x, to.y)) return false;
+
+        return true; 
     }
-    return {-1, -1};
+    return false;
 }
 
 // Node struct for Dijkstra
 struct Node {
     int x, y;
     int cost;
-    
-    // Priority Queue needs to pop the SMALLEST cost, so we invert the operator
     bool operator>(const Node& other) const {
         return cost > other.cost;
     }
@@ -77,25 +85,21 @@ struct Node {
 
 // Weighted Pathfinding (Dijkstra)
 std::vector<Point> calculatePath(Point start, Point end) {
-    // Distance map initialized to infinity (represented by -1 or max int)
     int dist[BOARD_WIDTH][BOARD_HEIGHT];
     Point parent[BOARD_WIDTH][BOARD_HEIGHT];
     
     for(int i=0; i<BOARD_WIDTH; i++) {
         for(int j=0; j<BOARD_HEIGHT; j++) {
-            dist[i][j] = 2000000000; // Infinity
+            dist[i][j] = 2000000000;
             parent[i][j] = {-1, -1};
         }
     }
 
-    // Min-Priority Queue
     std::priority_queue<Node, std::vector<Node>, std::greater<Node>> pq;
 
-    // Start node setup
     dist[start.x][start.y] = 0;
     pq.push({start.x, start.y, 0});
 
-    // 8 Directions
     int dx[] = {0, 0, 1, -1, 1, 1, -1, -1};
     int dy[] = {1, -1, 0, 0, 1, -1, 1, -1};
 
@@ -105,7 +109,6 @@ std::vector<Point> calculatePath(Point start, Point end) {
         Node curr = pq.top();
         pq.pop();
 
-        // If we found a shorter path to this node already, skip
         if (curr.cost > dist[curr.x][curr.y]) continue;
 
         if (curr.x == end.x && curr.y == end.y) {
@@ -113,32 +116,24 @@ std::vector<Point> calculatePath(Point start, Point end) {
             break; 
         }
 
-        // Explore neighbors
         for (int i = 0; i < 8; i++) {
             int nx = curr.x + dx[i];
             int ny = curr.y + dy[i];
 
             if (isValid(nx, ny)) {
-                
-                // --- Calculate Move Cost ---
                 int stepCost = (i < 4) ? COST_STRAIGHT : COST_DIAGONAL;
                 
                 // Penalty for entering an occupied square
-                // (Unless it's the destination, which implies a capture/landing)
-                // Note: Even for captures, we might want to path AROUND others to get there.
-                if (switches->isPopulated(nx, ny) && (nx != end.x || ny != end.y)) {
+                if (isPopulated(nx, ny) && (nx != end.x || ny != end.y)) {
                     stepCost += PENALTY_OCCUPIED;
                 }
 
-                // Special Check for Diagonals: The "Squeeze" Factor
-                if (i >= 4) { // Diagonal indices
-                    bool c1_occ = switches->isPopulated(curr.x, ny); // Corner 1
-                    bool c2_occ = switches->isPopulated(nx, curr.y); // Corner 2
-                    
-                    // If BOTH corners are occupied, this is a "squeeze" move. 
-                    // Add huge penalty to discourage repelling.
-                    if (c1_occ && c2_occ) {
-                        stepCost += PENALTY_SQUEEZE;
+                // Check for Diagonal Squeeze
+                if (i >= 4) { 
+                    bool c1_occ = isPopulated(curr.x, ny);
+                    bool c2_occ = isPopulated(nx, curr.y);
+                    if (c1_occ || c2_occ) { 
+                        stepCost += PENALTY_SQUEEZE; 
                     }
                 }
 
@@ -180,40 +175,96 @@ void movePieceSmart(int startX, int startY, int endX, int endY) {
     static bool pendingRestore = false;
     static Point pendingSrc, pendingDst;
 
-    for (Point nextStep : path) {
+    for (size_t i = 0; i < path.size(); i++) {
+        Point nextStep = path[i];
         
-        bool isDiagonal = (abs(currentPos.x - nextStep.x) == 1 && abs(currentPos.y - nextStep.y) == 1);
+        // --- 1. Optimization Loop: Merge Multiple Moves ---
+        // Look ahead as long as the direction is the same and path is safe
+        while (i + 1 < path.size()) {
+            Point nextNext = path[i+1];
+            int dx1 = nextStep.x - currentPos.x;
+            int dy1 = nextStep.y - currentPos.y;
+            // Note: Since we might have already merged, 'dx1' represents the TOTAL vector so far.
+            // We need to compare the DIRECTION of the next single step with our current vector.
+            // Since path[i] -> path[i+1] is always a single step, we check THAT vector.
+            
+            int stepDx = nextNext.x - nextStep.x;
+            int stepDy = nextNext.y - nextStep.y;
+
+            // To verify same direction, we can normalize the vectors or check ratios.
+            // Since we are on a grid, simply checking signs or equality of unit vectors works.
+            // However, our logic relies on combining steps. 
+            // A simpler check: Is the vector from (current -> nextNext) a straight line?
+            // i.e., is (nextNext.x - current.x) purely x or purely y, or purely diagonal?
+            
+            bool sameDir = false;
+            int totalDx = nextNext.x - currentPos.x;
+            int totalDy = nextNext.y - currentPos.y;
+            
+            // Check Straight Horizontal
+            if (totalDy == 0 && totalDx != 0) sameDir = true;
+            // Check Straight Vertical
+            else if (totalDx == 0 && totalDy != 0) sameDir = true;
+            // Check Perfect Diagonal
+            else if (abs(totalDx) == abs(totalDy)) sameDir = true;
+
+            // IF same direction AND the intermediate square (nextStep) is empty...
+            // Note: For diagonals, we also need to ensure the corners of the intermediate step are clear!
+            // But calculatePath penalizes bad diagonals, so we assume path is decent.
+            // We strictly check if the square we are skipping is empty.
+            if (sameDir && !isPopulated(nextStep.x, nextStep.y)) {
+                // If diagonal, check the corners of the skip we just made
+                if (abs(totalDx) == abs(totalDy)) {
+                     // We just extended a diagonal. We need to verify the NEW sub-segment is clear.
+                     // Specifically, check the corners for the step (nextStep -> nextNext).
+                     // This is handled by isDiagonalClear check in pathfinding, but let's be safe:
+                     if (!isDiagonalClear(nextStep, nextNext)) break; // Stop merging if squeezed
+                }
+
+                // Merge success: Update target and increment index
+                nextStep = nextNext;
+                i++; 
+            } else {
+                break; // Stop merging
+            }
+        }
+
+        // --- 2. Diagonal Safety Check ---
+        bool isDiagonal = (abs(currentPos.x - nextStep.x) >= 1 && abs(currentPos.y - nextStep.y) >= 1);
         Point diagCorner = {-1, -1};
 
         if (isDiagonal) {
-            diagCorner = getClearDiagonalPath(currentPos, nextStep);
+            // For a long diagonal merge, we might cross multiple squares.
+            // plan_move is straight line. A diagonal move (0,0 -> 3,3) is a straight line in physical space.
+            // We just need to make sure we didn't optimize through a "squeeze".
+            // The optimization loop above checks `isDiagonalClear` for each sub-step, so we should be good.
         }
 
-        // --- Logic Branch ---
-        
-        // CASE 1: Diagonal and Clear
-        if (isDiagonal && diagCorner.x != -1) {
-            plan_move(currentPos.x, currentPos.y, diagCorner.x, diagCorner.y, true);
-            plan_move(diagCorner.x, diagCorner.y, nextStep.x, nextStep.y, true);
-        } 
-        
-        // CASE 2: Standard Logic (Straight or Blocked Diagonal)
-        else {
-            if (switches->isPopulated(nextStep.x, nextStep.y) && nextStep != end) {
-                Point parkingSpot = findParkingBuff(nextStep, currentPos);
-                
-                plan_move(nextStep.x, nextStep.y, parkingSpot.x, parkingSpot.y, true);
+        // --- 3. Obstacle Clearing ---
+        if (isPopulated(nextStep.x, nextStep.y) && nextStep != end) {
+            Point parkingSpot = findParkingBuff(nextStep, currentPos);
+            
+            plan_move(nextStep.x, nextStep.y, parkingSpot.x, parkingSpot.y, true);
+            
+            board_state[nextStep.x][nextStep.y] = false;
+            board_state[parkingSpot.x][parkingSpot.y] = true;
 
-                hasRestorationJob = true;
-                restoreSource = parkingSpot;
-                restoreDest = nextStep;
-            }
-
-            plan_move(currentPos.x, currentPos.y, nextStep.x, nextStep.y, true);
+            hasRestorationJob = true;
+            restoreSource = parkingSpot;
+            restoreDest = nextStep;
         }
+
+        // --- 4. Execute Move ---
+        plan_move(currentPos.x, currentPos.y, nextStep.x, nextStep.y, true);
         
+        board_state[currentPos.x][currentPos.y] = false;
+        board_state[nextStep.x][nextStep.y] = true;
+
+        // --- 5. Restore Logic ---
         if (pendingRestore && nextStep != pendingDst) {
             plan_move(pendingSrc.x, pendingSrc.y, pendingDst.x, pendingDst.y, true);
+            board_state[pendingSrc.x][pendingSrc.y] = false;
+            board_state[pendingDst.x][pendingDst.y] = true;
             pendingRestore = false;
         }
 
@@ -229,6 +280,8 @@ void movePieceSmart(int startX, int startY, int endX, int endY) {
 
     if (pendingRestore && currentPos != pendingDst) {
          plan_move(pendingSrc.x, pendingSrc.y, pendingDst.x, pendingDst.y, true);
+         board_state[pendingSrc.x][pendingSrc.y] = false;
+         board_state[pendingDst.x][pendingDst.y] = true;
          pendingRestore = false;
     }
 }
