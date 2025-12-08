@@ -1882,7 +1882,8 @@ void aiResponseTask(void *pvParameter) {
                        capZoneRow, capZoneCol);
 
                 // Move captured piece from destination to capture zone
-                plan_move(physToRow, physToCol, capZoneRow, capZoneCol, false);
+                movePieceSmart(physToRow, physToCol, capZoneRow, capZoneCol, boardPtr);
+                //plan_move(physToRow, physToCol, capZoneRow, capZoneCol, false);
 
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI capture move timed out\n");
@@ -2330,7 +2331,8 @@ void app_main(void) {
                                    capturedPiece->getColor() == White ? "white" : "black",
                                    capZoneRow, capZoneCol);
 
-                            plan_move(physToRow, physToCol, capZoneRow, capZoneCol, false);
+                            movePieceSmart(physToRow, physToCol, capZoneRow, capZoneCol, &board);       
+                            //plan_move(physToRow, physToCol, capZoneRow, capZoneCol, false);
 
                             if (!wait_for_movement_complete(30000)) {
                                 ESP_LOGE("MOVE", "Capture movement timeout");
@@ -2489,7 +2491,8 @@ void app_main(void) {
                                     auto [capZoneRow, capZoneCol] = getNextCaptureSlot(targetPiece->getColor());
                                     printf("UI AI: Capture move, target to zone (%d,%d)\n", capZoneRow, capZoneCol);
 
-                                    plan_move(physToRow, physToCol, capZoneRow, capZoneCol, false);
+                                    movePieceSmart(physToRow, physToCol, capZoneRow, capZoneCol, &board);
+                                    //plan_move(physToRow, physToCol, capZoneRow, capZoneCol, false);
                                     wait_for_movement_complete(30000);
 
                                     // Move capturing piece - use clear-path if needed
@@ -2500,11 +2503,11 @@ void app_main(void) {
                                                         pathType == DIAGONAL_DIRECT || pathType == DIRECT_L_PATH);
                                         printf("UI AI: Capture move, path %s (%s)\n", isDirect ? "DIRECT" : "INDIRECT", PathAnalyzer::pathTypeToString(pathType).c_str());
 
-                                        if (isDirect) {
-                                            plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
-                                        } else {
+                                        // if (isDirect) {
+                                        //     plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
+                                        // } else {
                                             movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, &board);
-                                        }
+                                        //}
                                     }
                                     wait_for_movement_complete(30000);
                                     result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
@@ -2518,11 +2521,11 @@ void app_main(void) {
                                                     pathType == DIAGONAL_DIRECT || pathType == DIRECT_L_PATH);
                                     printf("UI AI: Regular move, path %s (%s)\n", isDirect ? "DIRECT" : "INDIRECT", PathAnalyzer::pathTypeToString(pathType).c_str());
 
-                                    if (isDirect) {
-                                        plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
-                                    } else {
+                                    // if (isDirect) {
+                                    //     plan_move(physFromRow, physFromCol, physToRow, physToCol, true);
+                                    // } else {
                                         movePieceSmart(physFromRow, physFromCol, physToRow, physToCol, &board);
-                                    }
+                                    //}
                                     wait_for_movement_complete(30000);
                                     result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
                                 }
