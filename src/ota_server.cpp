@@ -17,8 +17,8 @@
 static const char *TAG = "OTA_SERVER";
 
 // --- Configuration ---
-#define WIFI_SSID      "WizardChess_boad"
-#define WIFI_PASS      "Wizrd"
+#define WIFI_SSID      "WizardChess_board"
+#define WIFI_PASS      "Wizard123"
 #define LOG_BUFFER_SIZE (4 * 1024) 
 
 static RingbufHandle_t log_ringbuf = NULL;
