@@ -2204,6 +2204,7 @@ void aiResponseTask(void *pvParameter) {
 
             // Re-sync board_state for pathfinding after AI move
             setupMoveTracking(boardPtr);
+            rest_motors();
 
             // Send updated board state to UI after AI move
             {
@@ -2967,6 +2968,7 @@ void app_main(void) {
                                     result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
                                 }
                                 printf("UI AI move verified successfully\n");
+                                rest_motors();
                             } else {
                                 printf("AI has no valid moves!\n");
                             }
