@@ -32,11 +32,11 @@ void setupMotion() {
 
 void rest_motors() {
 // move to home and disable motors
-    plan_move(0, 0, 0, 0, true);
-    while(gantry.motion_active || !move_queue_is_empty()) {
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-    gpio_set_level(SLEEP_PIN, 0); //disable motors
+    // plan_move(0, 0, 0, 0, true);
+    // while(gantry.motion_active || !move_queue_is_empty()) {
+    //     vTaskDelay(pdMS_TO_TICKS(100));
+    // }
+    // gpio_set_level(SLEEP_PIN, 0); //disable motors
 }
 
 inline float half_dx_between(int a1, int a2) {
