@@ -27,6 +27,7 @@ void setupMotion() {
     gantry.y = 0;
     motors.A_pos = 0;
     motors.B_pos = 0;
+    gantry.home_active = false;
 }
 
 void rest_motors() {
@@ -58,11 +59,15 @@ void plan_move(int A_from, int B_from, int A_to, int B_to, bool direct) {
         return;
     }
 
-    // if (gpio_get_level(SLEEP_PIN) == 0) {
-    //     gpio_set_level(SLEEP_PIN, 1); //enable motors
-    //     vTaskDelay(pdMS_TO_TICKS(10)); //wait for motors to wake up
-    //     home_gantry();
-    // }
+    if (gpio_get_level(SLEEP_PIN) == 0) {
+        gpio_set_level(SLEEP_PIN, 1); //enable motors
+        vTaskDelay(pdMS_TO_TICKS(10)); //wait for motors to wake up
+        bool home = home_gantry();
+        if (!home) {
+            ESP_LOGE("PLAN_MOVE", "Failed to home gantry before move.");
+            return;
+        }   
+    }
 
     MoveCommand mc;
     float fromX = board_pos[A_from][B_from][0];
@@ -280,6 +285,7 @@ int correct_movement(int fix_x, int fix_y){
 }
 
 int home_gantry() {
+    gantry.home_active = true;
     const float homing_speed = 20.0f; // mm/s
     const float backoff_dist = 20.0f; // mm
 
@@ -363,7 +369,7 @@ int home_gantry() {
     
     gpio_intr_disable(LIMIT_Y_PIN);
     gpio_intr_disable(LIMIT_X_PIN);
-
+    gantry.home_active = false;
     return 1;
 }
 
