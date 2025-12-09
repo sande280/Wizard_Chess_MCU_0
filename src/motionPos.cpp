@@ -61,6 +61,7 @@ void plan_move(int A_from, int B_from, int A_to, int B_to, bool direct) {
     if (gpio_get_level(SLEEP_PIN) == 0) {
         gpio_set_level(SLEEP_PIN, 1); //enable motors
         vTaskDelay(pdMS_TO_TICKS(10)); //wait for motors to wake up
+        home_gantry();
     }
 
     MoveCommand mc;
