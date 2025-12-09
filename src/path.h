@@ -105,9 +105,10 @@ struct Node {
 };
 
 // Weighted Pathfinding (Dijkstra)
+// Using static arrays to avoid stack overflow from recursive calls
 std::vector<Point> calculatePath(Point start, Point end) {
-    int dist[BOARD_WIDTH][BOARD_HEIGHT];
-    Point parent[BOARD_WIDTH][BOARD_HEIGHT];
+    static int dist[BOARD_WIDTH][BOARD_HEIGHT];
+    static Point parent[BOARD_WIDTH][BOARD_HEIGHT];
     
     for(int i=0; i<BOARD_WIDTH; i++) {
         for(int j=0; j<BOARD_HEIGHT; j++) {
@@ -252,16 +253,27 @@ Point findEmptyCapture(int x, int y)
     return out;
 }
 
+// Maximum recursion depth to prevent stack overflow
+#define MAX_PATHFINDING_DEPTH 8
+
+void movePieceSmartInternal(int startX, int startY, int endX, int endY, int depth);
+
 void movePieceSmart(int startX, int startY, int endX, int endY) {
+    movePieceSmartInternal(startX, startY, endX, endY, 0);
+}
+
+void movePieceSmartInternal(int startX, int startY, int endX, int endY, int depth) {
+    // Prevent stack overflow from deep recursion
+    if (depth >= MAX_PATHFINDING_DEPTH) {
+        ESP_LOGW("PATHFINDING", "Max recursion depth reached, using direct move");
+        plan_move(startX, startY, endX, endY, true);
+        board_state[endX][endY] = board_state[startX][startY];
+        board_state[startX][startY] = 0;
+        return;
+    }
+
     Point start = {startX, startY};
     Point end = {endX, endY};
-
-    //Check if the end square is occupied (capture)
-    // if(board_state[endX][endY])
-    // {
-    //     Point captureEnd = findEmptyCapture(endX,endY);
-    //     movePieceSmart(endX, endY, captureEnd.x, captureEnd.y);
-    // }
 
     std::vector<Point> path = calculatePath(start, end);
     if (path.empty()) return;
@@ -284,8 +296,8 @@ void movePieceSmart(int startX, int startY, int endX, int endY) {
             //Check if i is populated
             if (isPopulated(nextStep.x, nextStep.y) && nextStep != end) {
                 Point parkingSpot = findParkingBuff(nextStep, currentPos, path);
-            
-                movePieceSmart(nextStep.x, nextStep.y, parkingSpot.x, parkingSpot.y);
+
+                movePieceSmartInternal(nextStep.x, nextStep.y, parkingSpot.x, parkingSpot.y, depth + 1);
 
                 restorationQueue.push_back({parkingSpot, nextStep});
             }
@@ -330,6 +342,6 @@ void movePieceSmart(int startX, int startY, int endX, int endY) {
     // We iterate backwards (LIFO) to unwind the moves.
     for (int i = restorationQueue.size() - 1; i >= 0; i--) {
         RestorationJob job = restorationQueue[i];
-        movePieceSmart(job.source.x, job.source.y, job.dest.x, job.dest.y);
+        movePieceSmartInternal(job.source.x, job.source.y, job.dest.x, job.dest.y, depth + 1);
     }
 }
