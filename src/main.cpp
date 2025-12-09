@@ -1610,7 +1610,7 @@ bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, float over
         return false;
     }
     
-    if ((gpio_get_level(SLEEP_PIN) == 0 || !gantry.zero_set) && !gantry.home_active) {
+    if (!gantry.zero_set && !gantry.home_active) {
         gpio_set_level(SLEEP_PIN, 1); //enable motors
         vTaskDelay(pdMS_TO_TICKS(10)); //wait for motors to wake up
         bool home = home_gantry();
