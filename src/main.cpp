@@ -40,6 +40,7 @@
 #include "reed.hpp"
 #include "leds.hpp"
 #include "audio.hpp"
+#include "tone.hpp"
 
 
 #include "path.h"
@@ -2222,6 +2223,7 @@ void app_main(void) {
 
     speaker = new audio();
     speaker->init();
+    play_error_tone();
 
     gpio_output_init(STEP1_PIN);
     gpio_output_init(STEP2_PIN);
