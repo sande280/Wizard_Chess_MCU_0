@@ -2204,6 +2204,7 @@ void aiResponseTask(void *pvParameter) {
 
             // Re-sync board_state for pathfinding after AI move
             setupMoveTracking(boardPtr);
+            rest_motors();
 
             // Send updated board state to UI after AI move
             {
