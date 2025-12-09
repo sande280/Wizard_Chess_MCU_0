@@ -2183,6 +2183,9 @@ void aiResponseTask(void *pvParameter) {
             }
             printf("AI move verified successfully\n");
 
+            // Rest motors after AI move is complete
+            rest_motors();
+
             // Update board state
             boardPtr->setTurn(currentTurn);
             boardPtr->movePiece(aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
@@ -2948,6 +2951,9 @@ void app_main(void) {
                                     result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
                                 }
                                 printf("UI AI move verified successfully\n");
+
+                                // Rest motors after AI move is complete
+                                rest_motors();
                             } else {
                                 printf("AI has no valid moves!\n");
                             }
