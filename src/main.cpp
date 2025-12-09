@@ -1616,9 +1616,11 @@ bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, float over
         bool home = home_gantry();
         if (!home) {
             ESP_LOGE("MoveToXY", "Failed to home gantry before move.");
-            return;
+            return false;
         }   
     }
+
+    gpio_set_level(HFS_PIN, 0);
     
     gpio_set_level(MAGNET_PIN, magnet_on);
 
@@ -1713,7 +1715,8 @@ void moveDispatchTask(void *pvParameters) {
         }
 
         if (gantry.position_reached) {
-            // ESP_LOGI("MOVE", "Idle: position reached");  // Too verbose
+            // ESP_LOGI("MOVE", "Idle: position reached");
+            gpio_set_level(HFS_PIN, 1);
         }
         vTaskDelay(pdMS_TO_TICKS(200));
     }
@@ -2195,8 +2198,8 @@ void aiResponseTask(void *pvParameter) {
             }
             printf("AI move verified successfully\n");
 
-            // Rest motors after AI move is complete
-            rest_motors();
+            // // Rest motors after AI move is complete
+            // rest_motors();
 
             // Update board state
             boardPtr->setTurn(currentTurn);
@@ -2204,7 +2207,7 @@ void aiResponseTask(void *pvParameter) {
 
             // Re-sync board_state for pathfinding after AI move
             setupMoveTracking(boardPtr);
-            rest_motors();
+            // rest_motors();
 
             // Send updated board state to UI after AI move
             {
@@ -2964,7 +2967,7 @@ void app_main(void) {
                                 printf("UI AI move verified successfully\n");
 
                                 // Rest motors after AI move is complete
-                                rest_motors();
+                                // rest_motors();
                             } else {
                                 printf("AI has no valid moves!\n");
                             }

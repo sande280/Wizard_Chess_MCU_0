@@ -45,7 +45,7 @@ void rest_motors() {
 
     plan_move(0, 0, 0, 0, true);
 
-    int move_count = move_queue_get_count();
+    move_count = move_queue_get_count();
     while(gantry.motion_active || !move_queue_is_empty()) {
         vTaskDelay(pdMS_TO_TICKS(100));
         if (move_queue_get_count() > move_count) {
