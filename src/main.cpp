@@ -76,8 +76,6 @@ typedef struct {
 
 static move_state_t move_ctx{};
 
-bool homing_active = false;
-
 // Pawn promotion state variables
 volatile bool promotionPending = false;
 volatile Type promotionChoice = Queen;
@@ -1498,7 +1496,7 @@ static void IRAM_ATTR step_timer_cb(void* arg) {
     long next_A = motors.A_pos;
     long next_B = motors.B_pos;
     
-    if (!homing_active) {
+    if (!gantry.home_active) {
 
         if (move_ctx.leader_id == 1) {
             if (move_ctx.sent_A < move_ctx.total_A) {
@@ -2320,9 +2318,7 @@ void app_main(void) {
     vTaskDelay(pdMS_TO_TICKS(2000));
     ESP_LOGI("INIT", "Startup, beginning homing sequence.");
 
-    homing_active = true;
     int homeOK = home_gantry();
-    homing_active = false;
     if (homeOK == -1) {
         ESP_LOGI("INIT", "Homing failed. Halting.");
         while (1) {
