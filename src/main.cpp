@@ -2282,9 +2282,21 @@ void app_main(void) {
     switches->init();
     switches->start_scan_task();
 
-    //speaker = new audio();
-    //speaker->init();
-    //play_error_tone();
+    speaker = new audio();
+    speaker->init();
+
+    static int32_t continuous_audio_file[1024*2] = {0};
+    const uint32_t continuous_buffer_size = 1024 * 2;
+
+    for (int i = 0; i < 1024; i++) {
+        // Generate a sine wave scaled to the full 32-bit signed integer range.
+        float sample_f = 0.5f * 0x03FFFFFF * sinf(440.0f * 2 * M_PI * i / I2S_SAMPLE_RATE);
+        int32_t sample = (int32_t)sample_f;
+        continuous_audio_file[2 * i] = sample;
+        continuous_audio_file[2 * i + 1] = sample;
+    }
+
+    speaker->start_continuous_playback(continuous_audio_file, continuous_buffer_size);
 
     gpio_output_init(STEP1_PIN);
     gpio_output_init(STEP2_PIN);

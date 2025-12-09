@@ -147,6 +147,7 @@ std::vector<Point> calculatePath(Point start, Point end) {
                 
                 // Penalty for entering an occupied square
                 if (isPopulated(nx, ny) && (nx != end.x || ny != end.y)) {
+                    //Check for cost to move
                     stepCost += PENALTY_OCCUPIED;
                 }
 
