@@ -29,6 +29,14 @@ void setupMotion() {
     motors.B_pos = 0;
 }
 
+void rest_motors() {
+// move to home and disable motors
+    plan_move(0, 0, 0, 0, true);
+    while(gantry.motion_active || !move_queue_is_empty()) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    gpio_set_level(SLEEP_PIN, 0); //disable motors
+}
 
 inline float half_dx_between(int a1, int a2) {
     a1 = std::clamp(a1, 0, 11);
@@ -48,6 +56,11 @@ void plan_move(int A_from, int B_from, int A_to, int B_to, bool direct) {
         A_to < 0 || A_to > 11 || B_to < 0 || B_to > 7) {
         ESP_LOGE("PLAN_MOVE", "Invalid board coordinates: from(%d,%d) to(%d,%d)", A_from, B_from, A_to, B_to);
         return;
+    }
+
+    if (gpio_get_level(SLEEP_PIN) == 0) {
+        gpio_set_level(SLEEP_PIN, 1); //enable motors
+        vTaskDelay(pdMS_TO_TICKS(10)); //wait for motors to wake up
     }
 
     MoveCommand mc;
