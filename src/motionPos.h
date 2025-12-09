@@ -23,6 +23,7 @@ typedef struct {
     float x_target, y_target;
     bool motion_active;
     bool position_reached;
+    bool home_active;
 } Gantry_t;
 
 typedef struct {
