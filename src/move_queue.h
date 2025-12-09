@@ -23,3 +23,6 @@ bool move_queue_pop(MoveCommand* out);
 
 // Return true if queue empty.
 bool move_queue_is_empty(void);
+
+// Return the number of moves in the queue.
+int move_queue_get_count(void);

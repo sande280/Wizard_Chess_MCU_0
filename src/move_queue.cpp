@@ -64,3 +64,13 @@ bool move_queue_is_empty(void) {
     }
     return empty;
 }
+
+int move_queue_get_count(void) {
+    if (!q_mutex) move_queue_init();
+    int count = 0;
+    if (xSemaphoreTake(q_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        count = q_count;
+        xSemaphoreGive(q_mutex);
+    }
+    return count;
+}

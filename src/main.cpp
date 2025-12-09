@@ -1605,6 +1605,20 @@ void gpio_input_init(gpio_num_t pin, gpio_int_type_t intr_type) {
 
 bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, float overshoot, bool magnet_on) {
     
+    if (!gantry.home_active && !gantry.zero_set) {
+        ESP_LOGE("MoveToXY", "Gantry not homing or zeroed. Cannot move.");
+        return false;
+    }
+    
+    if ((gpio_get_level(SLEEP_PIN) == 0 || !gantry.zero_set) && !gantry.home_active) {
+        gpio_set_level(SLEEP_PIN, 1); //enable motors
+        vTaskDelay(pdMS_TO_TICKS(10)); //wait for motors to wake up
+        bool home = home_gantry();
+        if (!home) {
+            ESP_LOGE("MoveToXY", "Failed to home gantry before move.");
+            return;
+        }   
+    }
     
     gpio_set_level(MAGNET_PIN, magnet_on);
 
@@ -1902,21 +1916,6 @@ void piecePickupDetectionTask(void *pvParameter) {
                                 // Re-sync board_state for pathfinding after player move
                                 setupMoveTracking(boardPtr);
 
-                                // Send updated board state to UI after player move
-                                {
-                                    uint8_t playerTxBuffer[33];
-                                    vTaskDelay(pdMS_TO_TICKS(50));
-                                    i2c_reset_tx_fifo(I2C_SLAVE_PORT);
-                                    vTaskDelay(pdMS_TO_TICKS(50));
-                                    if (playerColor == Black) {
-                                        serializeBoardStateFlipped(*boardPtr, playerTxBuffer);
-                                    } else {
-                                        serializeBoardState(*boardPtr, playerTxBuffer);
-                                    }
-                                    i2c_slave_write_buffer(I2C_SLAVE_PORT, playerTxBuffer, sizeof(playerTxBuffer), pdMS_TO_TICKS(1000));
-                                    printf("Sent player move board state to UI (physical mode)\n");
-                                }
-
                                 // Mark first move as made and show WHITE ambient
                                 if (!firstMoveMade) {
                                     firstMoveMade = true;
@@ -2196,6 +2195,9 @@ void aiResponseTask(void *pvParameter) {
             }
             printf("AI move verified successfully\n");
 
+            // Rest motors after AI move is complete
+            rest_motors();
+
             // Update board state
             boardPtr->setTurn(currentTurn);
             boardPtr->movePiece(aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
@@ -2225,12 +2227,8 @@ void aiResponseTask(void *pvParameter) {
 
             // Check for game over (checkmate or stalemate)
             Color opponent = (currentTurn == White) ? Black : White;
-            //bool oppInCheck = boardPtr->isKingInCheck(opponent);
-            //bool oppCanMove = boardPtr->hasValidMoves(opponent);
-            
-            bool oppInCheck = true;
-            bool oppCanMove = false;
-
+            bool oppInCheck = boardPtr->isKingInCheck(opponent);
+            bool oppCanMove = boardPtr->hasValidMoves(opponent);
 
             if (!oppCanMove) {
                 uint8_t gameOverBuffer[33];
@@ -2963,6 +2961,9 @@ void app_main(void) {
                                     result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
                                 }
                                 printf("UI AI move verified successfully\n");
+
+                                // Rest motors after AI move is complete
+                                rest_motors();
                             } else {
                                 printf("AI has no valid moves!\n");
                             }

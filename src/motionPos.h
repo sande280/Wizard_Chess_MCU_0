@@ -24,6 +24,7 @@ typedef struct {
     bool motion_active;
     bool position_reached;
     bool home_active;
+    bool zero_set;
 } Gantry_t;
 
 typedef struct {
