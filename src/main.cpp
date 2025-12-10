@@ -1713,12 +1713,11 @@ void moveDispatchTask(void *pvParameters) {
                 ESP_LOGI("INIT", "Pop failed unexpectedly");
             }
         }
-
-        if (gantry.position_reached) {
+        else if (gantry.position_reached && move_queue_is_empty()) {
             // ESP_LOGI("MOVE", "Idle: position reached");
             gpio_set_level(HFS_PIN, 1);
         }
-        vTaskDelay(pdMS_TO_TICKS(200));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -2244,6 +2243,7 @@ void aiResponseTask(void *pvParameter) {
                     } else {
                         serializeBoardStateGameOver(*boardPtr, gameOverBuffer);
                     }
+                    fuck();
                 } else {
                     // Stalemate - use 0xEE
                     printf("Stalemate! Game is a draw.\n");
