@@ -12,6 +12,9 @@
 #include "reed.hpp"
 #include "PathAnalyzer.hh"
 #include "ChessBoard.hh"
+#include "driver/gptimer.h" // Hardware Timer Driver
+#include "esp_rom_sys.h"
+#include "esp_attr.h"
 
 using namespace Student;
 
@@ -19,16 +22,179 @@ using namespace Student;
 Gantry_t gantry{};
 Motors_t motors{};
 
+
+// --- INTERNAL MOTION CONTEXT ---
+typedef struct {
+    uint32_t total_A, total_B;
+    uint32_t sent_A, sent_B;
+    int dirA, dirB;
+    uint32_t leader_steps;
+    uint32_t follower_steps;
+    int leader_id;
+    int error_term;
+    bool active;
+
+    // Acceleration Math
+    uint32_t accel_virtual_step; // Where we are on the math curve
+    uint32_t accel_ramp_steps;   // How many steps to accelerate
+    float current_period_us;
+    float min_period_us;
+    float start_period_us;
+    
+    // Timer tracking
+    uint64_t next_alarm_count; 
+} move_state_t;
+
+static move_state_t move_ctx{};
+static gptimer_handle_t gptimer = NULL; // Hardware timer handle
+
+// --- HARDWARE TIMER CALLBACK (ISR) ---
+// This runs in high-priority interrupt context. NO PRINTF ALLOWED HERE.
+static bool IRAM_ATTR on_step_timer_alarm(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_ctx) {
+    if (!move_ctx.active) return false;
+
+    // 1. GENERATE PULSE (Using ROM delay for precision)
+    if (move_ctx.leader_id == 1) {
+        if (move_ctx.sent_A < move_ctx.total_A) {
+            gpio_set_level(STEP1_PIN, 1);
+            esp_rom_delay_us(2);
+            gpio_set_level(STEP1_PIN, 0);
+            motors.A_pos += (move_ctx.dirA > 0 ? 1 : -1);
+            move_ctx.sent_A++;
+
+            move_ctx.error_term += move_ctx.follower_steps;
+            if (move_ctx.error_term >= (int)move_ctx.leader_steps) {
+                move_ctx.error_term -= move_ctx.leader_steps;
+                if (move_ctx.sent_B < move_ctx.total_B) {
+                    gpio_set_level(STEP2_PIN, 1);
+                    esp_rom_delay_us(2);
+                    gpio_set_level(STEP2_PIN, 0);
+                    motors.B_pos += (move_ctx.dirB > 0 ? 1 : -1);
+                    move_ctx.sent_B++;
+                }
+            }
+        }
+    } else { // B is leader
+        if (move_ctx.sent_B < move_ctx.total_B) {
+            gpio_set_level(STEP2_PIN, 1);
+            esp_rom_delay_us(2);
+            gpio_set_level(STEP2_PIN, 0);
+            motors.B_pos += (move_ctx.dirB > 0 ? 1 : -1);
+            move_ctx.sent_B++;
+
+            move_ctx.error_term += move_ctx.follower_steps;
+            if (move_ctx.error_term >= (int)move_ctx.leader_steps) {
+                move_ctx.error_term -= move_ctx.leader_steps;
+                if (move_ctx.sent_A < move_ctx.total_A) {
+                    gpio_set_level(STEP1_PIN, 1);
+                    esp_rom_delay_us(2);
+                    gpio_set_level(STEP1_PIN, 0);
+                    motors.A_pos += (move_ctx.dirA > 0 ? 1 : -1);
+                    move_ctx.sent_A++;
+                }
+            }
+        }
+    }
+
+    // 2. CHECK STOP CONDITION
+    if (move_ctx.sent_A >= move_ctx.total_A && move_ctx.sent_B >= move_ctx.total_B) {
+        move_ctx.active = false;
+        gptimer_stop(timer); // Stop the hardware timer
+        gantry.motion_active = false;
+        gantry.position_reached = true;
+        
+        // Update float coords one last time
+        gantry.x = (motors.A_pos + motors.B_pos) / (2.0f * STEPS_PER_MM);
+        gantry.y = (motors.A_pos - motors.B_pos) / (2.0f * STEPS_PER_MM);
+        return true; // We might need to wake high priority task, return true just in case
+    }
+
+    // 3. CALCULATE NEXT DELAY (Real-time Ramp)
+    long current_step = (move_ctx.leader_id == 1) ? move_ctx.sent_A : move_ctx.sent_B;
+    long steps_remaining = move_ctx.leader_steps - current_step;
+
+    if (current_step < move_ctx.accel_ramp_steps) {
+        // ACCELERATION
+        move_ctx.accel_virtual_step++;
+        // c_n = c_{n-1} * (1 - 2/(4n+1))
+        float factor = 1.0f - (2.0f / (4.0f * (float)move_ctx.accel_virtual_step + 1.0f));
+        move_ctx.current_period_us *= factor;
+        if (move_ctx.current_period_us < move_ctx.min_period_us) 
+            move_ctx.current_period_us = move_ctx.min_period_us;
+            
+    } else if (steps_remaining <= move_ctx.accel_ramp_steps) {
+        // DECELERATION
+        // Invert logic: move backwards along the virtual curve
+        // Clamp so we don't go slower than start speed
+        float factor = 1.0f + (2.0f / (4.0f * (float)steps_remaining + 1.0f));
+        move_ctx.current_period_us *= factor;
+        if (move_ctx.current_period_us > move_ctx.start_period_us)
+            move_ctx.current_period_us = move_ctx.start_period_us;
+    }
+
+    // 4. RE-ARM TIMER
+    // Ensure period doesn't drop too low (safety limit 40us = 25kHz)
+    if (move_ctx.current_period_us < 40.0f) move_ctx.current_period_us = 40.0f;
+
+    move_ctx.next_alarm_count += (uint64_t)move_ctx.current_period_us;
+    
+    gptimer_alarm_config_t alarm_config = {
+        .alarm_count = move_ctx.next_alarm_count,
+        .reload_count = 0,
+        .flags = { .auto_reload_on_alarm = false }
+    };
+    gptimer_set_alarm_action(timer, &alarm_config);
+
+    return false;
+}
+
+// Forward declaration
+static void IRAM_ATTR limit_switch_isr_handler(void* arg);
+
 // Implementation of setupMotion moved from header to avoid multiple-definition
 void setupMotion() {
     gantry.zero_set = false;
     gantry.motion_active = false;
     gantry.position_reached = true;
-    gantry.x = 0;
-    gantry.y = 0;
-    motors.A_pos = 0;
-    motors.B_pos = 0;
+    gantry.x = 0; gantry.y = 0;
+    motors.A_pos = 0; motors.B_pos = 0;
     gantry.home_active = false;
+
+    // --- INITIALIZE HARDWARE TIMER (GPTimer) ---
+    gptimer_config_t timer_config = {
+        .clk_src = GPTIMER_CLK_SRC_DEFAULT,
+        .direction = GPTIMER_COUNT_UP,
+        .resolution_hz = 1000000, // 1MHz, 1 tick = 1us
+    };
+    ESP_ERROR_CHECK(gptimer_new_timer(&timer_config, &gptimer));
+
+    gptimer_event_callbacks_t cbs = {
+        .on_alarm = on_step_timer_alarm,
+    };
+    ESP_ERROR_CHECK(gptimer_register_event_callbacks(gptimer, &cbs, NULL));
+    ESP_ERROR_CHECK(gptimer_enable(gptimer));
+    ESP_LOGI("MOTION", "GPTimer initialized for stepping");
+
+    gpio_install_isr_service(0);
+    gpio_isr_handler_add(LIMIT_Y_PIN, limit_switch_isr_handler, (void*) LIMIT_Y_PIN);
+    gpio_isr_handler_add(LIMIT_X_PIN, limit_switch_isr_handler, (void*) LIMIT_X_PIN);
+
+}
+
+volatile bool limit_x_triggered = false;
+volatile bool limit_y_triggered = false;
+
+static void IRAM_ATTR limit_switch_isr_handler(void* arg) {
+    uint32_t gpio_num = (uint32_t) arg;
+    if (gpio_num == LIMIT_Y_PIN) {
+        limit_y_triggered = true;
+    } else if (gpio_num == LIMIT_X_PIN) {
+        limit_x_triggered = true;
+    }
+    // Stop motors immediately
+    move_ctx.active = false;
+    // esp_timer_stop(step_timer);
+    gantry.motion_active = false;
 }
 
 // void rest_motors() {
@@ -343,7 +509,7 @@ int home_gantry() {
     while(!limit_y_triggered) {
         if (esp_log_timestamp() - homeStartTime > 40000) { // 40 second timeout
             ESP_LOGI("HOME", "Homing Y axis timed out. Aborting.");
-            esp_timer_stop(step_timer);
+            move_ctx.active = false;
             gantry.home_active = false;
             return -1;
         }
@@ -362,7 +528,7 @@ int home_gantry() {
     while(!limit_x_triggered) {
         if (esp_log_timestamp() - homeStartTime > 40000) { // 40 second timeout
             ESP_LOGI("HOME", "Homing X axis timed out. Aborting.");
-            esp_timer_stop(step_timer);
+            move_ctx.active = false;
             gantry.home_active = false;
             return -1;
         }
@@ -663,4 +829,101 @@ void plan_move_with_clear(int A_from, int B_from, int A_to, int B_to,
     }
 
     ESP_LOGI("CLEAR", "Clear-path movement complete");
+}
+
+
+bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, float overshoot, bool magnet_on) {
+    if (!gantry.home_active && !gantry.zero_set) {
+        ESP_LOGE("MoveToXY", "Gantry not homing or zeroed.");
+        return false;
+    }
+    
+    // Bounds check
+    if ((x_target_mm < 0.0f || y_target_mm < 0.0f || x_target_mm > 410.0f || y_target_mm > 280.0f) && !gantry.home_active) {
+        move_ctx.active = false;
+        gptimer_stop(gptimer);
+        gantry.motion_active = false;
+        gantry.position_reached = true;
+        return false;
+    }
+
+    gpio_set_level(HFS_PIN, 0); // Enable high force if needed
+    gpio_set_level(MAGNET_PIN, magnet_on);
+
+    // Calculate Steps
+    long newA = lroundf((x_target_mm + y_target_mm) * STEPS_PER_MM);
+    long newB = lroundf((x_target_mm - y_target_mm) * STEPS_PER_MM);
+    long deltaA = newA - motors.A_pos;
+    long deltaB = newB - motors.B_pos;
+
+    move_ctx.dirA = (deltaA >= 0) ? 1 : -1;
+    move_ctx.dirB = (deltaB >= 0) ? 1 : -1;
+    move_ctx.total_A = abs(deltaA);
+    move_ctx.total_B = abs(deltaB);
+    move_ctx.sent_A = 0; move_ctx.sent_B = 0;
+    move_ctx.error_term = 0;
+
+    gpio_set_level(DIR1_PIN, move_ctx.dirA > 0 ? 1 : 0);
+    gpio_set_level(DIR2_PIN, move_ctx.dirB > 0 ? 1 : 0);
+
+    // Leader/Follower Logic
+    if (move_ctx.total_A >= move_ctx.total_B) {
+        move_ctx.leader_id = 1;
+        move_ctx.leader_steps = move_ctx.total_A;
+        move_ctx.follower_steps = move_ctx.total_B;
+    } else {
+        move_ctx.leader_id = 2;
+        move_ctx.leader_steps = move_ctx.total_B;
+        move_ctx.follower_steps = move_ctx.total_A;
+    }
+
+    // --- ACCELERATION SETUP (FIXED) ---
+    float steps_per_mm_leader = STEPS_PER_MM; // Approx
+    float start_speed = 50.0f; 
+    if (start_speed > speed_mm_s) start_speed = speed_mm_s;
+
+    // Calculate Periods
+    move_ctx.min_period_us = 1000000.0f / (speed_mm_s * steps_per_mm_leader);
+    move_ctx.start_period_us = 1000000.0f / (start_speed * steps_per_mm_leader);
+    move_ctx.current_period_us = move_ctx.start_period_us;
+
+    // Calculate Virtual Step (Curve Fix)
+    // n = v^2 / (2 * a * alpha)
+    float alpha = 2.0f * ACCEL_MM_S2 / steps_per_mm_leader; 
+    long start_n = (long)((start_speed * start_speed) / alpha);
+    move_ctx.accel_virtual_step = start_n;
+
+    long target_n = (long)((speed_mm_s * speed_mm_s) / alpha);
+    long needed_ramp = target_n - start_n;
+
+    // Triangle Profile Check
+    if (needed_ramp * 2 > move_ctx.leader_steps) {
+        move_ctx.accel_ramp_steps = move_ctx.leader_steps / 2;
+    } else {
+        move_ctx.accel_ramp_steps = needed_ramp;
+    }
+
+    // Start Timer
+    move_ctx.active = true;
+    gantry.motion_active = true;
+    gantry.position_reached = false;
+    gantry.x_target = x_target_mm;
+    gantry.y_target = y_target_mm;
+    motors.A_target = newA;
+    motors.B_target = newB;
+
+    // Reset Hardware Timer
+    gptimer_stop(gptimer);
+    gptimer_set_raw_count(gptimer, 0);
+    move_ctx.next_alarm_count = (uint64_t)move_ctx.current_period_us;
+    
+    gptimer_alarm_config_t alarm_config = {
+        .alarm_count = move_ctx.next_alarm_count,
+        .reload_count = 0,
+        .flags = { .auto_reload_on_alarm = false }
+    };
+    gptimer_set_alarm_action(gptimer, &alarm_config);
+    gptimer_start(gptimer);
+
+    return true;
 }

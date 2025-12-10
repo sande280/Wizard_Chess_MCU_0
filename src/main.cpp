@@ -45,8 +45,6 @@
 
 #include "path.h"
 
-esp_timer_handle_t step_timer = nullptr;
-
 using namespace Student;
 using namespace std;
 
@@ -60,26 +58,6 @@ static const char *TAG = "ESP_CHESS";
 reed* switches = nullptr;
 audio* speaker = nullptr;
 leds* led = nullptr;
-
-
-typedef struct {
-    uint32_t total_A, total_B;
-    uint32_t sent_A, sent_B;
-    int dirA, dirB;
-    uint32_t leader_steps;
-    uint32_t follower_steps;
-    int leader_id; // 1=A, 2=B
-    float step_period_us;
-    int error_term;
-    bool active;
-
-    long ramp_steps;           // How many steps to spend accelerating
-    float current_period_us;   // current delay between steps
-    float min_period_us;       // target delay at full speed
-    float start_period_us;     // initial slow delay
-} move_state_t;
-
-static move_state_t move_ctx{};
 
 // Pawn promotion state variables
 volatile bool promotionPending = false;
@@ -1486,96 +1464,6 @@ void chess_game_task(void *pvParameter) {
     esp_restart();
 }
 
-
-inline void pulse_step(gpio_num_t pin) {
-    gpio_set_level(pin, 1);
-    esp_rom_delay_us(2); // Much cleaner than polling esp_timer
-    gpio_set_level(pin, 0);
-}
-
-static void IRAM_ATTR step_timer_cb(void* arg) {
-    if (!move_ctx.active) return;
-
-    // --- 1. EXECUTE STEP (Bresenham) ---
-    // We removed the bounds check here. Trust moveToXY to validate targets.
-    
-    if (move_ctx.leader_id == 1) {
-        if (move_ctx.sent_A < move_ctx.total_A) {
-            pulse_step(STEP1_PIN);
-            motors.A_pos += (move_ctx.dirA > 0 ? 1 : -1);
-            move_ctx.sent_A++;
-            
-            // Handle follower (B)
-            move_ctx.error_term += move_ctx.follower_steps;
-            if (move_ctx.error_term >= (int)move_ctx.leader_steps) {
-                move_ctx.error_term -= move_ctx.leader_steps;
-                if (move_ctx.sent_B < move_ctx.total_B) {
-                    pulse_step(STEP2_PIN);
-                    motors.B_pos += (move_ctx.dirB > 0 ? 1 : -1);
-                    move_ctx.sent_B++;
-                }
-            }
-        }
-    } else { // B is leader
-        if (move_ctx.sent_B < move_ctx.total_B) {
-            pulse_step(STEP2_PIN);
-            motors.B_pos += (move_ctx.dirB > 0 ? 1 : -1);
-            move_ctx.sent_B++;
-            
-            // Handle follower (A)
-            move_ctx.error_term += move_ctx.follower_steps;
-            if (move_ctx.error_term >= (int)move_ctx.leader_steps) {
-                move_ctx.error_term -= move_ctx.leader_steps;
-                if (move_ctx.sent_A < move_ctx.total_A) {
-                    pulse_step(STEP1_PIN);
-                    motors.A_pos += (move_ctx.dirA > 0 ? 1 : -1);
-                    move_ctx.sent_A++;
-                }
-            }
-        }
-    }
-
-    // --- 2. STOP CONDITION ---
-    if (move_ctx.sent_A >= move_ctx.total_A && move_ctx.sent_B >= move_ctx.total_B) {
-        move_ctx.active = false;
-        gantry.motion_active = false;
-        gantry.position_reached = true;
-        // Don't re-arm timer
-        
-        // Final position sync (Float math is okay here, we are stopping)
-        gantry.x = (motors.A_pos + motors.B_pos) / (2.0f * STEPS_PER_MM);
-        gantry.y = (motors.A_pos - motors.B_pos) / (2.0f * STEPS_PER_MM);
-        return;
-    }
-
-    // --- 3. ACCELERATION LOGIC ---
-    long current_step = (move_ctx.leader_id == 1) ? move_ctx.sent_A : move_ctx.sent_B;
-    long steps_remaining = move_ctx.leader_steps - current_step;
-
-    if (current_step < move_ctx.ramp_steps) {
-        // ACCELERATION
-        // Fixed Formula: 2.0f numerator
-        float factor = 1.0f - (2.0f / (4.0f * (float)current_step + 1.0f));
-        move_ctx.current_period_us *= factor;
-        
-        if (move_ctx.current_period_us < move_ctx.min_period_us) 
-            move_ctx.current_period_us = move_ctx.min_period_us;
-            
-    } else if (steps_remaining <= move_ctx.ramp_steps) {
-        // DECELERATION
-        // We use steps_remaining to mirror the acceleration curve
-        // Note: We use the '+' operator to increase delay (slow down)
-        float factor = 1.0f + (2.0f / (4.0f * (float)steps_remaining + 1.0f));
-        move_ctx.current_period_us *= factor;
-        
-        if (move_ctx.current_period_us > move_ctx.start_period_us)
-            move_ctx.current_period_us = move_ctx.start_period_us;
-    }
-
-    // --- 4. RE-ARM ---
-    esp_timer_start_once(step_timer, (uint64_t)move_ctx.current_period_us);
-}
-
 void gpio_output_init(gpio_num_t pin) {
     gpio_config_t cfg = {
         .pin_bit_mask = (1ULL << pin),
@@ -1599,137 +1487,6 @@ void gpio_input_init(gpio_num_t pin, gpio_int_type_t intr_type) {
 }
 
 
-bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, float overshoot, bool magnet_on) {
-    
-    if (!gantry.home_active && !gantry.zero_set) {
-        ESP_LOGE("MoveToXY", "Gantry not homing or zeroed. Cannot move.");
-        return false;
-    }
-    
-    if (!gantry.zero_set && !gantry.home_active) {
-        gpio_set_level(SLEEP_PIN, 1); //enable motors
-        vTaskDelay(pdMS_TO_TICKS(10)); //wait for motors to wake up
-        bool home = home_gantry();
-        if (!home) {
-            ESP_LOGE("MoveToXY", "Failed to home gantry before move.");
-            return false;
-        }   
-    }
-    if ((x_target_mm < 0.0f || y_target_mm < 0.0f || x_target_mm > 410.0f || y_target_mm > 280.0f) && !gantry.home_active) {
-        move_ctx.active = false;
-        esp_timer_stop(step_timer);
-        gantry.motion_active = false;
-        gantry.position_reached = true;
-        ESP_LOGI(TAG, "Movement stopped: out of bounds (X: %.2f mm, Y: %.2f mm)", x_target_mm, y_target_mm);
-        return -1;
-    }
-
-    gpio_set_level(HFS_PIN, 0);
-    
-    gpio_set_level(MAGNET_PIN, magnet_on);
-
-    if (speed_mm_s <= 0.0f) return false;
-
-
-    float dx = x_target_mm - gantry.x;
-    float dy = y_target_mm - gantry.y;
-    float distance = sqrtf(dx*dx + dy*dy);
-
-    if (overshoot > 0.0f) {
-        float overshoot_ratio = overshoot / distance;
-        x_target_mm += dx * overshoot_ratio;
-        y_target_mm += dy * overshoot_ratio;
-        distance += overshoot;
-    }
-
-    if (distance <= 0.0f) return false;
-
-    float time_s = distance / speed_mm_s;
-
-    long newA = lroundf((x_target_mm + y_target_mm) * STEPS_PER_MM);
-    long newB = lroundf((x_target_mm - y_target_mm) * STEPS_PER_MM);
-    long deltaA = newA - motors.A_pos;
-    long deltaB = newB - motors.B_pos;
-
-    move_ctx.dirA = (deltaA >= 0) ? 1 : -1;
-    move_ctx.dirB = (deltaB >= 0) ? 1 : -1;
-
-    move_ctx.total_A = abs(deltaA);
-    move_ctx.total_B = abs(deltaB);
-    move_ctx.sent_A = move_ctx.sent_B = 0;
-    move_ctx.error_term = 0;
-
-    // Set directions
-    gpio_set_level(DIR1_PIN, move_ctx.dirA > 0 ? 1 : 0);
-    gpio_set_level(DIR2_PIN, move_ctx.dirB > 0 ? 1 : 0);
-
-    // Determine leader/follower
-    if (move_ctx.total_A >= move_ctx.total_B) {
-        move_ctx.leader_id = 1;
-        move_ctx.leader_steps = move_ctx.total_A;
-        move_ctx.follower_steps = move_ctx.total_B;
-    } else {
-        move_ctx.leader_id = 2;
-        move_ctx.leader_steps = move_ctx.total_B;
-        move_ctx.follower_steps = move_ctx.total_A;
-    }
-
-    // 1. Calculate steps needed to accelerate to target speed: s = v^2 / 2a
-    float steps_per_mm_leader = STEPS_PER_MM; // Assuming axes have same resolution
-    long accel_steps_needed = (long)((speed_mm_s * speed_mm_s) / (2.0f * ACCEL_MM_S2) * steps_per_mm_leader);
-
-    // 2. Handle Triangle Profile (Short moves where we can't reach full speed)
-    long total_steps = move_ctx.leader_steps;
-    if (accel_steps_needed * 2 > total_steps) {
-        move_ctx.ramp_steps = total_steps / 2;
-    } else {
-        move_ctx.ramp_steps = accel_steps_needed;
-    }
-
-    // 3. Calculate Periods (Delay in microseconds)
-    move_ctx.min_period_us = 1000000.0f / (speed_mm_s * steps_per_mm_leader);
-
-    // Start speed: usually distinct from 0 to avoid infinite delay. 
-    // Let's perform a "safe start" at ~50mm/s or calculate based on first step physics
-    float start_speed = 50.0f; 
-    if (start_speed > speed_mm_s) start_speed = speed_mm_s; // Clamp if target is very slow
-    move_ctx.start_period_us = 1000000.0f / (start_speed * steps_per_mm_leader);
-    move_ctx.current_period_us = move_ctx.start_period_us;
-
-    // ... setup active flags ... 
-    // step frequency based on leader
-    float freq = move_ctx.leader_steps / time_s;
-    move_ctx.step_period_us = 1e6 / freq;
-
-    move_ctx.active = true;
-    gantry.motion_active = true;
-    gantry.position_reached = false;
-
-    gantry.x_target = x_target_mm;
-    gantry.y_target = y_target_mm;
-    motors.A_target = newA;
-    motors.B_target = newB;
-
-    // 4. CHANGE: Use One-Shot instead of Periodic
-    if (!step_timer) {
-        esp_timer_create_args_t args = {
-            .callback = &step_timer_cb,
-            .arg = NULL,
-            .dispatch_method = ESP_TIMER_TASK,
-            .name = "step_timer",
-            .skip_unhandled_events = false
-        };
-        esp_timer_create(&args, &step_timer);
-    }
-
-    // Fire the first shot
-    esp_timer_start_once(step_timer, (uint64_t)move_ctx.current_period_us);
-
-    // esp_timer_start_periodic(step_timer, (uint64_t)move_ctx.step_period_us);
-
-    ESP_LOGI("MOVE", "Straight move: freq=%.1f Hz, period=%.1f us, A=%lu B=%lu", freq, move_ctx.step_period_us, move_ctx.total_A, move_ctx.total_B);
-    return true;
-}
 
 void moveDispatchTask(void *pvParameters) {
     while (true) {
@@ -1753,21 +1510,6 @@ void moveDispatchTask(void *pvParameters) {
     }
 }
 
-volatile bool limit_x_triggered = false;
-volatile bool limit_y_triggered = false;
-
-static void IRAM_ATTR limit_switch_isr_handler(void* arg) {
-    uint32_t gpio_num = (uint32_t) arg;
-    if (gpio_num == LIMIT_Y_PIN) {
-        limit_y_triggered = true;
-    } else if (gpio_num == LIMIT_X_PIN) {
-        limit_x_triggered = true;
-    }
-    // Stop motors immediately
-    move_ctx.active = false;
-    // esp_timer_stop(step_timer);
-    gantry.motion_active = false;
-}
 
 // Task to detect physical piece pickup via reed switches and show possible moves on LEDs
 void piecePickupDetectionTask(void *pvParameter) {
@@ -2347,10 +2089,6 @@ void app_main(void) {
 
     gpio_input_init(LIMIT_Y_PIN, GPIO_INTR_NEGEDGE);
     gpio_input_init(LIMIT_X_PIN, GPIO_INTR_NEGEDGE);
-
-    gpio_install_isr_service(0);
-    gpio_isr_handler_add(LIMIT_Y_PIN, limit_switch_isr_handler, (void*) LIMIT_Y_PIN);
-    gpio_isr_handler_add(LIMIT_X_PIN, limit_switch_isr_handler, (void*) LIMIT_X_PIN);
 
     gpio_set_level(SLEEP_PIN, 1);
     gpio_set_level(EN_PIN, 1);
