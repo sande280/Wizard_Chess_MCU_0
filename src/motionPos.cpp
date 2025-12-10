@@ -421,6 +421,39 @@ void yeet_piece(int A_from, int B_from) {
     gpio_set_level(MAGNET_PIN, 0);
 }
 
+// turn the magnet on and move all around the board
+// do not call plan move after calling this
+void fuck(){
+
+    plan_move(0, 0, 0, 0, true);
+    int done = wait_for_movement_complete(50000);
+
+
+    MoveCommand mc =  {board_pos[11][1][0], board_pos[11][1][1], 100.0f, 0.0f, true};
+    move_queue_push(&mc);
+    
+    mc.x = board_pos[0][7][0];
+    mc.y = board_pos[0][7][1];
+    move_queue_push(&mc);
+
+    mc.x = board_pos[11][6][0];
+    mc.y = board_pos[11][6][1];
+    move_queue_push(&mc);
+
+    mc.x = board_pos[0][2][0];
+    mc.y = board_pos[0][2][1];
+    move_queue_push(&mc);
+
+    mc.x = board_pos[11][5][0];
+    mc.y = board_pos[11][5][1];
+    move_queue_push(&mc);
+
+    mc.x = board_pos[5][4][0];
+    mc.y = board_pos[5][4][1];
+    move_queue_push(&mc);
+
+}
+
 //--------------------------------------------
 // Move Verification Functions
 //--------------------------------------------
@@ -428,7 +461,7 @@ void yeet_piece(int A_from, int B_from) {
 bool wait_for_movement_complete(uint32_t timeout_ms) {
     uint32_t start_time = esp_log_timestamp();
 
-    while (!move_queue_is_empty() || !gantry.position_reached) {
+    while (!move_queue_is_empty()) {
         if ((esp_log_timestamp() - start_time) > timeout_ms) {
             ESP_LOGE("VERIFY", "Timeout waiting for movement to complete");
             return false;
