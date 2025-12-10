@@ -199,8 +199,11 @@ namespace Student
                 if (numCols<2) return false;
                 int rCol = rSide?(numCols-1):0;
                 ChessPiece *rr = getPiece(fromRow, rCol);
+
+                // Debug: Check rook existence
                 if (rr == nullptr || rr->getType() != Rook || rr->getColor() != cCol)
                 {
+                    printf("CASTLE FAIL: Rook not found at (%d,%d) or wrong type/color\n", fromRow, rCol);
                     return false;
                 }
                 if (cCol == White)
@@ -211,29 +214,45 @@ namespace Student
                 {
                     rMoved = rSide ? blackRookRightMoved : blackRookLeftMoved;
                 }
+
+                // Debug: Check moved flags
                 if (kMoved || rMoved)
                 {
+                    printf("CASTLE FAIL: kMoved=%d rMoved=%d\n", kMoved, rMoved);
                     return false;
                 }
+
                 int step = (cDiff > 0) ? 1 : -1;
                 int cCheck = fromColumn+step;
                 while(cCheck != rCol) {
                     if (getPiece(fromRow, cCheck) != nullptr && cCheck != rCol)
                     {
+                        printf("CASTLE FAIL: Piece blocking at (%d,%d)\n", fromRow, cCheck);
                         return false;
                     }
                     cCheck += step;
                 }
+
+                // Debug: Check if in check
                 if (kingSafeQ(cCol))
                 {
+                    printf("CASTLE FAIL: King is in check\n");
                     return false;
                 }
+
                 int interCol = fromColumn+step;
                 int finalCol = fromColumn+2*step;
                 // Check if king passes through or lands on an attacked square
                 Color enemy = (cCol == White) ? Black : White;
-                if (isSquareAttacked(fromRow, interCol, enemy)) return false;
-                if (isSquareAttacked(fromRow, finalCol, enemy)) return false;
+                if (isSquareAttacked(fromRow, interCol, enemy)) {
+                    printf("CASTLE FAIL: Square (%d,%d) is attacked\n", fromRow, interCol);
+                    return false;
+                }
+                if (isSquareAttacked(fromRow, finalCol, enemy)) {
+                    printf("CASTLE FAIL: Square (%d,%d) is attacked\n", fromRow, finalCol);
+                    return false;
+                }
+                printf("CASTLE: All checks passed!\n");
                 return true;
             }
         }

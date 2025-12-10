@@ -106,9 +106,10 @@ struct Node {
 };
 
 // Weighted Pathfinding (Dijkstra)
+// Using static arrays to avoid stack overflow from recursive calls
 std::vector<Point> calculatePath(Point start, Point end) {
-    int dist[BOARD_WIDTH][BOARD_HEIGHT];
-    Point parent[BOARD_WIDTH][BOARD_HEIGHT];
+    static int dist[BOARD_WIDTH][BOARD_HEIGHT];
+    static Point parent[BOARD_WIDTH][BOARD_HEIGHT];
     
     for(int i=0; i<BOARD_WIDTH; i++) {
         for(int j=0; j<BOARD_HEIGHT; j++) {
@@ -147,6 +148,7 @@ std::vector<Point> calculatePath(Point start, Point end) {
                 
                 // Penalty for entering an occupied square
                 if (isPopulated(nx, ny) && (nx != end.x || ny != end.y)) {
+                    //Check for cost to move
                     stepCost += PENALTY_OCCUPIED;
                 }
 
@@ -206,6 +208,8 @@ std::queue<Point> moveOne(Point start, Point end, std::vector<Point>& path)
     plan_move(start.x, start.y, end.x, end.y, true);
 }
 
+// Maximum recursion depth to prevent stack overflow
+#define MAX_PATHFINDING_DEPTH 8
 
 std::vector<RestorationJob> clearPath(std::vector<Point>& path)
 {
