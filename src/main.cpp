@@ -2058,7 +2058,7 @@ void aiResponseTask(void *pvParameter) {
 
                 // Step 1: Move king to temp square
                 printf("AI Castle Step 1: King to temp (%d,%d)\n", tempRow, tempCol);
-                //plan_move(physFromRow, physFromCol, tempRow, tempCol, true);
+                movePieceSmart(physFromRow, physFromCol, tempRow, tempCol);
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI castling step 1 timed out\n");
                     continue;
@@ -2066,7 +2066,7 @@ void aiResponseTask(void *pvParameter) {
 
                 // Step 2: Move rook to final position
                 printf("AI Castle Step 2: Rook (%d,%d) to (%d,%d)\n", physRookSrcRow, physFromCol, physRookDestRow, physFromCol);
-                //plan_move(physRookSrcRow, physFromCol, physRookDestRow, physFromCol, true);
+                movePieceSmart(physRookSrcRow, physFromCol, physRookDestRow, physFromCol);
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI castling step 2 timed out\n");
                     continue;
@@ -2074,7 +2074,7 @@ void aiResponseTask(void *pvParameter) {
 
                 // Step 3: Move king from temp to final position
                 printf("AI Castle Step 3: King temp to final (%d,%d)\n", physToRow, physToCol);
-                //plan_move(tempRow, tempCol, physToRow, physToCol, true);
+                movePieceSmart(tempRow, tempCol, physToRow, physToCol);
                 if (!wait_for_movement_complete(30000)) {
                     printf("AI castling step 3 timed out\n");
                     continue;
@@ -2897,11 +2897,11 @@ void app_main(void) {
                                     int tempRow = physFromRow;
                                     int tempCol = physFromCol + 1;
 
-                                    //plan_move(physFromRow, physFromCol, tempRow, tempCol, true);
+                                    movePieceSmart(physFromRow, physFromCol, tempRow, tempCol);
                                     wait_for_movement_complete(30000);
-                                    //plan_move(physRookSrcRow, physFromCol, physRookDestRow, physFromCol, true);
+                                    movePieceSmart(physRookSrcRow, physFromCol, physRookDestRow, physFromCol);
                                     wait_for_movement_complete(30000);
-                                    //plan_move(tempRow, tempCol, physToRow, physToCol, true);
+                                    movePieceSmart(tempRow, tempCol, physToRow, physToCol);
                                     wait_for_movement_complete(30000);
                                     result = verify_castling_move(physFromRow, physFromCol, physToCol, physRookSrcRow, physRookDestRow);
 
