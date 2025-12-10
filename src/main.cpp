@@ -72,6 +72,11 @@ typedef struct {
     float step_period_us;
     int error_term;
     bool active;
+
+    long ramp_steps;           // How many steps to spend accelerating
+    float current_period_us;   // current delay between steps
+    float min_period_us;       // target delay at full speed
+    float start_period_us;     // initial slow delay
 } move_state_t;
 
 static move_state_t move_ctx{};
@@ -1492,53 +1497,16 @@ inline void pulse_step(gpio_num_t pin) {
 static void IRAM_ATTR step_timer_cb(void* arg) {
     if (!move_ctx.active) return;
 
-    // Check bounds before stepping
-    long next_A = motors.A_pos;
-    long next_B = motors.B_pos;
+    // --- 1. EXECUTE STEP (Bresenham) ---
+    // We removed the bounds check here. Trust moveToXY to validate targets.
     
-    if (!gantry.home_active) {
-
-        if (move_ctx.leader_id == 1) {
-            if (move_ctx.sent_A < move_ctx.total_A) {
-                next_A += (move_ctx.dirA > 0 ? 1 : -1);
-                int temp_err = move_ctx.error_term + move_ctx.follower_steps;
-                if (temp_err >= (int)move_ctx.leader_steps) {
-                    if (move_ctx.sent_B < move_ctx.total_B) {
-                        next_B += (move_ctx.dirB > 0 ? 1 : -1);
-                    }
-                }
-            }
-        } else {
-            if (move_ctx.sent_B < move_ctx.total_B) {
-                next_B += (move_ctx.dirB > 0 ? 1 : -1);
-                int temp_err = move_ctx.error_term + move_ctx.follower_steps;
-                if (temp_err >= (int)move_ctx.leader_steps) {
-                    if (move_ctx.sent_A < move_ctx.total_A) {
-                        next_A += (move_ctx.dirA > 0 ? 1 : -1);
-                    }
-                }
-            }
-        }
-
-        float next_x = (next_A + next_B) / (2.0f * STEPS_PER_MM);
-        float next_y = (next_A - next_B) / (2.0f * STEPS_PER_MM);
-
-        if (next_x < 0.0f || next_y < 0.0f || next_x > 410.0f || next_y > 280.0f) {
-            move_ctx.active = false;
-            esp_timer_stop(step_timer);
-            gantry.motion_active = false;
-            gantry.position_reached = true;
-            ESP_LOGI(TAG, "Movement stopped: out of bounds (X: %.2f mm, Y: %.2f mm)", next_x, next_y);
-            return;
-        }
-
-    }
-
     if (move_ctx.leader_id == 1) {
         if (move_ctx.sent_A < move_ctx.total_A) {
             pulse_step(STEP1_PIN);
             motors.A_pos += (move_ctx.dirA > 0 ? 1 : -1);
             move_ctx.sent_A++;
+            
+            // Handle follower (B)
             move_ctx.error_term += move_ctx.follower_steps;
             if (move_ctx.error_term >= (int)move_ctx.leader_steps) {
                 move_ctx.error_term -= move_ctx.leader_steps;
@@ -1554,6 +1522,8 @@ static void IRAM_ATTR step_timer_cb(void* arg) {
             pulse_step(STEP2_PIN);
             motors.B_pos += (move_ctx.dirB > 0 ? 1 : -1);
             move_ctx.sent_B++;
+            
+            // Handle follower (A)
             move_ctx.error_term += move_ctx.follower_steps;
             if (move_ctx.error_term >= (int)move_ctx.leader_steps) {
                 move_ctx.error_term -= move_ctx.leader_steps;
@@ -1566,18 +1536,45 @@ static void IRAM_ATTR step_timer_cb(void* arg) {
         }
     }
 
-    // stop when both complete
+    // --- 2. STOP CONDITION ---
     if (move_ctx.sent_A >= move_ctx.total_A && move_ctx.sent_B >= move_ctx.total_B) {
         move_ctx.active = false;
-        esp_timer_stop(step_timer);
         gantry.motion_active = false;
         gantry.position_reached = true;
+        // Don't re-arm timer
+        
+        // Final position sync (Float math is okay here, we are stopping)
+        gantry.x = (motors.A_pos + motors.B_pos) / (2.0f * STEPS_PER_MM);
+        gantry.y = (motors.A_pos - motors.B_pos) / (2.0f * STEPS_PER_MM);
+        return;
     }
-    
-    // Update live XY coordinates
-    gantry.x = (motors.A_pos + motors.B_pos) / (2.0f * STEPS_PER_MM);
-    gantry.y = (motors.A_pos - motors.B_pos) / (2.0f * STEPS_PER_MM);
 
+    // --- 3. ACCELERATION LOGIC ---
+    long current_step = (move_ctx.leader_id == 1) ? move_ctx.sent_A : move_ctx.sent_B;
+    long steps_remaining = move_ctx.leader_steps - current_step;
+
+    if (current_step < move_ctx.ramp_steps) {
+        // ACCELERATION
+        // Fixed Formula: 2.0f numerator
+        float factor = 1.0f - (2.0f / (4.0f * (float)current_step + 1.0f));
+        move_ctx.current_period_us *= factor;
+        
+        if (move_ctx.current_period_us < move_ctx.min_period_us) 
+            move_ctx.current_period_us = move_ctx.min_period_us;
+            
+    } else if (steps_remaining <= move_ctx.ramp_steps) {
+        // DECELERATION
+        // We use steps_remaining to mirror the acceleration curve
+        // Note: We use the '+' operator to increase delay (slow down)
+        float factor = 1.0f + (2.0f / (4.0f * (float)steps_remaining + 1.0f));
+        move_ctx.current_period_us *= factor;
+        
+        if (move_ctx.current_period_us > move_ctx.start_period_us)
+            move_ctx.current_period_us = move_ctx.start_period_us;
+    }
+
+    // --- 4. RE-ARM ---
+    esp_timer_start_once(step_timer, (uint64_t)move_ctx.current_period_us);
 }
 
 void gpio_output_init(gpio_num_t pin) {
@@ -1618,6 +1615,14 @@ bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, float over
             ESP_LOGE("MoveToXY", "Failed to home gantry before move.");
             return false;
         }   
+    }
+    if ((x_target_mm < 0.0f || y_target_mm < 0.0f || x_target_mm > 410.0f || y_target_mm > 280.0f) && !gantry.home_active) {
+        move_ctx.active = false;
+        esp_timer_stop(step_timer);
+        gantry.motion_active = false;
+        gantry.position_reached = true;
+        ESP_LOGI(TAG, "Movement stopped: out of bounds (X: %.2f mm, Y: %.2f mm)", x_target_mm, y_target_mm);
+        return -1;
     }
 
     gpio_set_level(HFS_PIN, 0);
@@ -1670,6 +1675,29 @@ bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, float over
         move_ctx.follower_steps = move_ctx.total_A;
     }
 
+    // 1. Calculate steps needed to accelerate to target speed: s = v^2 / 2a
+    float steps_per_mm_leader = STEPS_PER_MM; // Assuming axes have same resolution
+    long accel_steps_needed = (long)((speed_mm_s * speed_mm_s) / (2.0f * ACCEL_MM_S2) * steps_per_mm_leader);
+
+    // 2. Handle Triangle Profile (Short moves where we can't reach full speed)
+    long total_steps = move_ctx.leader_steps;
+    if (accel_steps_needed * 2 > total_steps) {
+        move_ctx.ramp_steps = total_steps / 2;
+    } else {
+        move_ctx.ramp_steps = accel_steps_needed;
+    }
+
+    // 3. Calculate Periods (Delay in microseconds)
+    move_ctx.min_period_us = 1000000.0f / (speed_mm_s * steps_per_mm_leader);
+
+    // Start speed: usually distinct from 0 to avoid infinite delay. 
+    // Let's perform a "safe start" at ~50mm/s or calculate based on first step physics
+    float start_speed = 50.0f; 
+    if (start_speed > speed_mm_s) start_speed = speed_mm_s; // Clamp if target is very slow
+    move_ctx.start_period_us = 1000000.0f / (start_speed * steps_per_mm_leader);
+    move_ctx.current_period_us = move_ctx.start_period_us;
+
+    // ... setup active flags ... 
     // step frequency based on leader
     float freq = move_ctx.leader_steps / time_s;
     move_ctx.step_period_us = 1e6 / freq;
@@ -1683,6 +1711,7 @@ bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, float over
     motors.A_target = newA;
     motors.B_target = newB;
 
+    // 4. CHANGE: Use One-Shot instead of Periodic
     if (!step_timer) {
         esp_timer_create_args_t args = {
             .callback = &step_timer_cb,
@@ -1694,7 +1723,10 @@ bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, float over
         esp_timer_create(&args, &step_timer);
     }
 
-    esp_timer_start_periodic(step_timer, (uint64_t)move_ctx.step_period_us);
+    // Fire the first shot
+    esp_timer_start_once(step_timer, (uint64_t)move_ctx.current_period_us);
+
+    // esp_timer_start_periodic(step_timer, (uint64_t)move_ctx.step_period_us);
 
     ESP_LOGI("MOVE", "Straight move: freq=%.1f Hz, period=%.1f us, A=%lu B=%lu", freq, move_ctx.step_period_us, move_ctx.total_A, move_ctx.total_B);
     return true;
@@ -1715,6 +1747,7 @@ void moveDispatchTask(void *pvParameters) {
         }
         else if (gantry.position_reached && move_queue_is_empty()) {
             // ESP_LOGI("MOVE", "Idle: position reached");
+            vTaskDelay(pdMS_TO_TICKS(100));
             gpio_set_level(HFS_PIN, 1);
         }
         vTaskDelay(pdMS_TO_TICKS(100));
@@ -1733,7 +1766,7 @@ static void IRAM_ATTR limit_switch_isr_handler(void* arg) {
     }
     // Stop motors immediately
     move_ctx.active = false;
-    esp_timer_stop(step_timer);
+    // esp_timer_stop(step_timer);
     gantry.motion_active = false;
 }
 
@@ -2364,6 +2397,8 @@ void app_main(void) {
     //     vTaskDelay(pdMS_TO_TICKS(100));
     // }
     // correct_movement(2, 0);
+
+    plan_move(10, 5, 2, 0, true);
 
 
     ESP_LOGI("INIT", "Gantry motion and position status: active=%d reached=%d", gantry.motion_active ? 1 : 0, gantry.position_reached ? 1 : 0);
