@@ -1489,8 +1489,7 @@ void chess_game_task(void *pvParameter) {
 
 inline void pulse_step(gpio_num_t pin) {
     gpio_set_level(pin, 1);
-    uint64_t t0 = esp_timer_get_time();
-    while (esp_timer_get_time() - t0 < 2) { }
+    esp_rom_delay_us(2); // Much cleaner than polling esp_timer
     gpio_set_level(pin, 0);
 }
 
