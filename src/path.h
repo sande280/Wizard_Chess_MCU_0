@@ -199,47 +199,14 @@ void setupMoveTracking(ChessBoard* board)
     }
 }
 
-std::queue<Point> moveOne(Point start, Point end, std::vector<Point>& path)
-{
-    if(isPopulated(end.x, end.y))
-    {
-        moveOne(end, calculatePath(start, findParkingBuff(end, path))[0], path);
-    }
-    plan_move(start.x, start.y, end.x, end.y, true);
-}
-
-// Maximum recursion depth to prevent stack overflow
-#define MAX_PATHFINDING_DEPTH 8
-
-std::vector<RestorationJob> clearPath(std::vector<Point>& path)
-{
-    std::vector<RestorationJob> restoreQueue;
-    //Loop through to check if each point is occupied
-    for(int i = 0; i < path.size(); i++)
-    {
-        Point step = path[i];
-
-        if(isPopulated(step.x, step.y))
-        {
-            //Find a free parking spot
-            Point parkingSpot = findParkingBuff(step, path);
-
-            //Find path to parking spot
-            std::vector<Point> clearPath = calculatePath(step, parkingSpot);
-
-            //Move one move at a time until the original spot is clear
-            
-        }
-    }
-
-}
-
 std::list<RestorationJob> movePieceSmart(int startX, int startY, int endX, int endY, bool restore) {
     Point start = {startX, startY};
     Point end = {endX, endY};
 
     std::vector<Point> path = calculatePath(start, end);
-    if (path.empty()) return;
+    std::list<RestorationJob> restorationQueue;
+
+    if (path.empty()) return restorationQueue;
 
     for(int i = 0; i < path.size(); i++)
     {
@@ -248,7 +215,6 @@ std::list<RestorationJob> movePieceSmart(int startX, int startY, int endX, int e
     }
 
     Point currentPos = start;
-    std::list<RestorationJob> restorationQueue;
 
     for (size_t i = 0; i < path.size(); i++) {
         Point nextStep = path[i];
@@ -309,8 +275,9 @@ std::list<RestorationJob> movePieceSmart(int startX, int startY, int endX, int e
     {
         while(!restorationQueue.empty())
         {
-            RestorationJob job = restorationQueue.pop_back();
-            movePieceSmart(job.source.x, job.source.y, job.dest.x, job.dest.y);
+            RestorationJob job = restorationQueue.back();
+            movePieceSmart(job.source.x, job.source.y, job.dest.x, job.dest.y, true);
+            restorationQueue.pop_back();
         }
     }
 
