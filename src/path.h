@@ -105,9 +105,10 @@ struct Node {
 };
 
 // Weighted Pathfinding (Dijkstra)
+// Using static arrays to avoid stack overflow from recursive calls
 std::vector<Point> calculatePath(Point start, Point end) {
-    int dist[BOARD_WIDTH][BOARD_HEIGHT];
-    Point parent[BOARD_WIDTH][BOARD_HEIGHT];
+    static int dist[BOARD_WIDTH][BOARD_HEIGHT];
+    static Point parent[BOARD_WIDTH][BOARD_HEIGHT];
     
     for(int i=0; i<BOARD_WIDTH; i++) {
         for(int j=0; j<BOARD_HEIGHT; j++) {
@@ -146,6 +147,7 @@ std::vector<Point> calculatePath(Point start, Point end) {
                 
                 // Penalty for entering an occupied square
                 if (isPopulated(nx, ny) && (nx != end.x || ny != end.y)) {
+                    //Check for cost to move
                     stepCost += PENALTY_OCCUPIED;
                 }
 
@@ -196,163 +198,151 @@ void setupMoveTracking(ChessBoard* board)
     }
 }
 
-// Point findEmptyCapture(int x, int y)
-// {
-//     uint8_t row1, row2;
-//     Point out = {-1, -1};
-//     if(board_state[x][y] == 1)
-//     {
-//         row1 = 0;
-//         row2 = 1;
-//     }
-//     else
-//     {
-//         row1 = 11;
-//         row2 = 10;
-//     }
+Point findEmptyCapture(int x, int y)
+{
+    uint8_t row1, row2;
+    Point out = {-1, -1};
+    if(board_state[x][y] == 1)
+    {
+        row1 = 0;
+        row2 = 1;
+    }
+    else
+    {
+        row1 = 11;
+        row2 = 10;
+    }
 
-//     //Loop through to find best side
-//     if(y < 4)
-//     {
-//         for(int i = 0; i < 4; i++)
-//         {
-//             if(!board_state[row1][i])
-//             {
-//                 out.x = row1;
-//                 out.y = i;
-//                 break;
-//             }
-//             else if(!board_state[row2][i])
-//             {
-//                 out.x = row2;
-//                 out.y = i;
-//                 break;
-//             }
-//         }
-//     }
-//     else
-//     {
-//         for(int i = 7; i > 3; i--)
-//         {
-//             if(!board_state[row1][i])
-//             {
-//                 out.x = row1;
-//                 out.y = i;
-//                 break;
-//             }
-//             else if(!board_state[row2][i])
-//             {
-//                 out.x = row2;
-//                 out.y = i;
-//                 break;
-//             }
-//         }
-//     }
+    //Loop through to find best side
+    if(y < 4)
+    {
+        for(int i = 0; i < 4; i++)
+        {
+            if(!board_state[row1][i])
+            {
+                out.x = row1;
+                out.y = i;
+                break;
+            }
+            else if(!board_state[row2][i])
+            {
+                out.x = row2;
+                out.y = i;
+                break;
+            }
+        }
+    }
+    else
+    {
+        for(int i = 7; i > 3; i--)
+        {
+            if(!board_state[row1][i])
+            {
+                out.x = row1;
+                out.y = i;
+                break;
+            }
+            else if(!board_state[row2][i])
+            {
+                out.x = row2;
+                out.y = i;
+                break;
+            }
+        }
+    }
 
-//     return out;
-// }
+    return out;
+}
 
+// Maximum recursion depth to prevent stack overflow
+#define MAX_PATHFINDING_DEPTH 8
 
-// --- New Helper: Moves a piece along a guaranteed clear path ---
-// This isolates the physical movement logic and optimization from the pathfinding logic.
-void executeMovePath(std::vector<Point>& path) {
+void movePieceSmartInternal(int startX, int startY, int endX, int endY, int depth);
+
+void movePieceSmart(int startX, int startY, int endX, int endY) {
+    movePieceSmartInternal(startX, startY, endX, endY, 0);
+}
+
+void movePieceSmartInternal(int startX, int startY, int endX, int endY, int depth) {
+    // Prevent stack overflow from deep recursion
+    if (depth >= MAX_PATHFINDING_DEPTH) {
+        ESP_LOGW("PATHFINDING", "Max recursion depth reached, using direct move");
+        plan_move(startX, startY, endX, endY, true);
+        board_state[endX][endY] = board_state[startX][startY];
+        board_state[startX][startY] = 0;
+        return;
+    }
+
+    Point start = {startX, startY};
+    Point end = {endX, endY};
+
+    std::vector<Point> path = calculatePath(start, end);
     if (path.empty()) return;
 
-    Point currentPos = path[0];
+    for(int i = 0; i < path.size(); i++)
+    {
+        ESP_LOGI("PATHFINDING", "Path Step %d: (%d, %d)", i, path[i].x, path[i].y);
+        ESP_LOGI("PATHFINDING", "Board State at Step %d:", isPopulated(path[i].x, path[i].y) ? 1 : 0);
+    }
 
-    // Iterate through path steps
+    Point currentPos = start;
+    std::vector<RestorationJob> restorationQueue;
+
     for (size_t i = 0; i < path.size(); i++) {
         Point nextStep = path[i];
-
-        // Skip the start node or if we haven't moved
-        if (nextStep == currentPos) continue;
-
-        // --- Optimization Loop (Combine straight/diagonal steps) ---
-        // Keeps the smooth movement logic from your original code
+        
+        bool populated = false;
+        // --- Optimization Loop ---
         while (i + 1 < path.size()) {
+            //Check if i is populated
+            if (isPopulated(nextStep.x, nextStep.y) && nextStep != end) {
+                Point parkingSpot = findParkingBuff(nextStep, currentPos, path);
+
+                movePieceSmartInternal(nextStep.x, nextStep.y, parkingSpot.x, parkingSpot.y, depth + 1);
+
+                restorationQueue.push_back({parkingSpot, nextStep});
+            }
+
             Point nextNext = path[i+1];
             int totalDx = nextNext.x - currentPos.x;
             int totalDy = nextNext.y - currentPos.y;
             bool sameDir = false;
             
-            if (totalDy == 0 && totalDx != 0) sameDir = true;      // Horizontal
-            else if (totalDx == 0 && totalDy != 0) sameDir = true; // Vertical
-            else if (abs(totalDx) == abs(totalDy)) sameDir = true; // Diagonal
+            if (totalDy == 0 && totalDx != 0) sameDir = true;
+            else if (totalDx == 0 && totalDy != 0) sameDir = true;
+            else if (abs(totalDx) == abs(totalDy)) sameDir = true; 
             
-            if(sameDir) {
-                // If diagonal, ensure we don't clip corners
-                if(abs(totalDx) == abs(totalDy)) {
-                    // Check if the physical move between currentPos and nextNext is safe
-                    // We check nextStep vs nextNext to ensure the segment is valid
+            if(sameDir)
+            {
+                //Check for Diagonal
+                if(abs(totalDx) == abs(totalDy))
+                {
                     if(!isDiagonalClear(nextStep, nextNext)) break;
                 }
                 nextStep = nextNext;
                 i++;
-            } else {
+            }
+            else
+            {
                 break;
             }
         }
 
-        // --- Execute Physical Move ---
+        // --- 4. Execute Move ---
         plan_move(currentPos.x, currentPos.y, nextStep.x, nextStep.y, true);
         
-        // Update Board State immediately
+        //Update board state
         board_state[nextStep.x][nextStep.y] = board_state[currentPos.x][currentPos.y];
         board_state[currentPos.x][currentPos.y] = 0;
 
         currentPos = nextStep;
     }
-}
 
-void movePieceSmart(int startX, int startY, int endX, int endY) {
-    Point start = {startX, startY};
-    Point end = {endX, endY};
-
-    std::vector<Point> mainPath = calculatePath(start, end);
-    if (mainPath.empty()) return;
-    
-    std::vector<RestorationJob> restorationQueue;
-
-    // 2. PHASE 1: The Sweeper (Clear the Highway)
-    // Iterate through the intended path and move any blockers OUT of the way first.
-    for (size_t i = 0; i < mainPath.size(); i++) {
-        Point p = mainPath[i];
-        
-        // Skip start (ourself) and end (capture logic usually handles this, or we stop before it)
-        if (p == start || p == end) continue;
-
-        if (isPopulated(p.x, p.y)) {
-            // Found a blocker! Find a parking spot.
-            // Pass the FULL mainPath to ensure we don't park it further down our own road.
-            Point parking = findParkingBuff(p, start, mainPath);
-            
-            if (parking.x != -1) {
-                // Calculate path for the blocker to the parking spot
-                std::vector<Point> parkingPath = calculatePath(p, parking);
-                
-                // Move the blocker physically
-                executeMovePath(parkingPath);
-                
-                // Remember to put it back later
-                restorationQueue.push_back({p, parking}); // Source was p, Dest was parking
-            } else {
-                ESP_LOGE("PATH", "CRITICAL: Could not find parking for blocker at (%d, %d)", p.x, p.y);
-                // In a real scenario, you might abort here, but we continue hoping for the best
-            }
-        }
-    }
-
-    // 3. PHASE 2: The Hero (Execute the Main Move)
-    // The path is now physically clear of pieces (except maybe diagonals neighbors, which optimization handles).
-    executeMovePath(mainPath);
-
-    // 4. PHASE 3: Restoration (Put blockers back)
-    // Reverse iterate to undo moves in LIFO order (Last In, First Out)
+    // --- EXECUTE DEFERRED RESTORATIONS ---
+    // Now that the main piece has finished its entire journey, put everything back.
+    // We iterate backwards (LIFO) to unwind the moves.
     for (int i = restorationQueue.size() - 1; i >= 0; i--) {
         RestorationJob job = restorationQueue[i];
-        
-        // Move from parking (dest) back to source
-        std::vector<Point> returnPath = calculatePath(job.dest, job.source);
-        executeMovePath(returnPath);
+        movePieceSmartInternal(job.source.x, job.source.y, job.dest.x, job.dest.y, depth + 1);
     }
 }
