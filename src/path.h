@@ -15,7 +15,7 @@
 #define COST_STRAIGHT       10
 #define COST_DIAGONAL       14
 #define PENALTY_OCCUPIED    500
-#define PENALTY_SQUEEZE     10000
+#define PENALTY_SQUEEZE     1500
 
 using namespace Student;
 using namespace std;
