@@ -93,7 +93,7 @@ void audio::playback_task(void* pvParameters)
     audio* instance = (audio*)pvParameters;
     ESP_LOGI(TAG, "Starting playback task.");
 
-    while(1)
+    while(!instance->m_stop_flag)
     {
         // Prioritize one-shot sounds
         if (instance->m_play_oneshot_flag)
@@ -113,6 +113,7 @@ void audio::playback_task(void* pvParameters)
             vTaskDelay(pdMS_TO_TICKS(10));
         }
     }
+    vTaskDelete(NULL);  // self-delete
 }
 
 void audio::start_continuous_playback(int32_t* audio_buffer, uint32_t buffer_size)
@@ -149,6 +150,8 @@ void audio::stop_continuous_playback()
         m_playback_task_handle = NULL;
         ESP_LOGI(TAG, "Stopped continuous playback task.");
     }
+
+    m_stop_flag = true;
 
     ESP_ERROR_CHECK(i2s_channel_disable(rx_handle));
     ESP_ERROR_CHECK(i2s_channel_disable(tx_handle));

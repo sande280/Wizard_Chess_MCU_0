@@ -53,6 +53,7 @@ private:
     TaskHandle_t m_playback_task_handle = NULL;
     int32_t* m_continuous_audio_buffer = NULL;
     uint32_t m_continuous_buffer_size = 0;
+    volatile bool m_stop_flag = false;
 
     // Members for one-shot playback
     volatile bool m_play_oneshot_flag = false;
