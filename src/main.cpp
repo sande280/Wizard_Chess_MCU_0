@@ -1621,6 +1621,7 @@ bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, float over
     }
 
     gpio_set_level(HFS_PIN, 0);
+    vTaskDelay(pdMS_TO_TICKS(10));
     
     gpio_set_level(MAGNET_PIN, magnet_on);
 
@@ -1715,6 +1716,7 @@ void moveDispatchTask(void *pvParameters) {
         }
         else if (gantry.position_reached && move_queue_is_empty()) {
             // ESP_LOGI("MOVE", "Idle: position reached");
+            vTaskDelay(pdMS_TO_TICKS(100));
             gpio_set_level(HFS_PIN, 1);
         }
         vTaskDelay(pdMS_TO_TICKS(100));
