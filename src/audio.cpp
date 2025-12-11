@@ -3,14 +3,6 @@
 // Define TAG for logging
 static const char* TAG = "AUDIO";
 
-<<<<<<< HEAD
-=======
-// Declare external audio data
-// Make sure these match the definition in your data file
-extern const int32_t captureAudio[];
-extern const uint32_t captureAudioSize;
-
->>>>>>> c7148d060c43ab97343ac0df600745667701f6ea
 void audio::init_gpio()
 {
     // Setup GPIO3 ()
