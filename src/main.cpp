@@ -1717,7 +1717,7 @@ void moveDispatchTask(void *pvParameters) {
             vTaskDelay(pdMS_TO_TICKS(100));
             gpio_set_level(HFS_PIN, 1);
 
-            if (gantry.zero_set && (esp_timer_get_time() / 1000 - input_time) > MOTOR_SLEEP_TIMEOUT_MS && !gantry.home_active) {
+            if (gantry.zero_set && (((esp_timer_get_time() / 1000) - input_time) > MOTOR_SLEEP_TIMEOUT_MS) && !gantry.home_active) {
                 rest_motors();
             }
         }
