@@ -106,6 +106,7 @@ void audio::playback_task(void* pvParameters)
         else if (instance->m_continuous_audio_buffer != NULL && instance->m_continuous_buffer_size > 0)
         {
             instance->play_sound(instance->m_continuous_audio_buffer, instance->m_continuous_buffer_size);
+            vTaskDelay(1);
         }
         else
         {
@@ -146,19 +147,23 @@ void audio::stop_continuous_playback()
 {
     if (m_playback_task_handle != NULL)
     {
+        m_stop_flag = true;
+
+        // Disable I2S BEFORE deleting the task
+        i2s_channel_disable(tx_handle);
+        i2s_channel_disable(rx_handle);
+
+        // Allow the task time to exit the write loop
+        vTaskDelay(pdMS_TO_TICKS(20));
+
         vTaskDelete(m_playback_task_handle);
         m_playback_task_handle = NULL;
-        ESP_LOGI(TAG, "Stopped continuous playback task.");
     }
 
-    m_stop_flag = true;
-
-    ESP_ERROR_CHECK(i2s_channel_disable(rx_handle));
-    ESP_ERROR_CHECK(i2s_channel_disable(tx_handle));
-
-    // Clear buffer info
     m_continuous_audio_buffer = NULL;
     m_continuous_buffer_size = 0;
+
+    ESP_LOGI(TAG, "Continuous playback stopped.");
 }
 
 void audio::play_oneshot(int32_t* audio_buffer, uint32_t buffer_size)
