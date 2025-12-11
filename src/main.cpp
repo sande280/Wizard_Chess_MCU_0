@@ -1605,10 +1605,6 @@ void gpio_input_init(gpio_num_t pin, gpio_int_type_t intr_type) {
 
 bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, float overshoot, bool magnet_on) {
     
-    if (!gantry.home_active && !gantry.zero_set) {
-        ESP_LOGE("MoveToXY", "Gantry not homing or zeroed. Cannot move.");
-        return false;
-    }
     
     if (!gantry.zero_set && !gantry.home_active) {
         gpio_set_level(SLEEP_PIN, 1); //enable motors
