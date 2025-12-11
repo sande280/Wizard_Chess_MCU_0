@@ -53,17 +53,8 @@ void audio::init_i2s()
 
     // Enable the I2S channels
     ESP_LOGI(TAG, "Enabling I2S channels...");
-    ESP_ERROR_CHECK(i2s_channel_enable(tx_handle));
-    ESP_ERROR_CHECK(i2s_channel_enable(rx_handle));
-
-    xTaskCreate(
-        playback_task,
-        "AudioPlaybackTask",
-        4096,
-        this, // Pass the current object instance to the task
-        5,
-        &m_playback_task_handle
-    );
+    //ESP_ERROR_CHECK(i2s_channel_enable(tx_handle));
+    //ESP_ERROR_CHECK(i2s_channel_enable(rx_handle));
 }
 
 void audio::init()
@@ -126,6 +117,9 @@ void audio::playback_task(void* pvParameters)
 
 void audio::start_continuous_playback(int32_t* audio_buffer, uint32_t buffer_size)
 {
+    ESP_ERROR_CHECK(i2s_channel_enable(tx_handle));
+    ESP_ERROR_CHECK(i2s_channel_enable(rx_handle));
+
     if (m_playback_task_handle != NULL) {
         ESP_LOGW(TAG, "Playback task is already running.");
         // If task is running, just update the buffer it should use.
@@ -136,6 +130,15 @@ void audio::start_continuous_playback(int32_t* audio_buffer, uint32_t buffer_siz
 
     m_continuous_audio_buffer = audio_buffer;
     m_continuous_buffer_size = buffer_size;
+
+    xTaskCreate(
+        playback_task,
+        "AudioPlaybackTask",
+        4096,
+        this, // Pass the current object instance to the task
+        5,
+        &m_playback_task_handle
+    );
 }
 
 void audio::stop_continuous_playback()
@@ -146,6 +149,9 @@ void audio::stop_continuous_playback()
         m_playback_task_handle = NULL;
         ESP_LOGI(TAG, "Stopped continuous playback task.");
     }
+
+    ESP_ERROR_CHECK(i2s_channel_disable(rx_handle));
+    ESP_ERROR_CHECK(i2s_channel_disable(tx_handle));
 
     // Clear buffer info
     m_continuous_audio_buffer = NULL;
