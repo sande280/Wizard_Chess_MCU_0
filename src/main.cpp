@@ -2361,7 +2361,7 @@ void app_main(void) {
 
     speaker = new audio();
     speaker->init();
-    //speaker->playCaptureSound();
+    speaker->playCaptureSound();
 
     // static int32_t continuous_audio_file[I2S_SAMPLE_RATE / 400 * 2] = {0};
     // const uint32_t continuous_buffer_size = I2S_SAMPLE_RATE / 400 * 2;
