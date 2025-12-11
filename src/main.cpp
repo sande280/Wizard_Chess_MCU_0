@@ -2363,20 +2363,20 @@ void app_main(void) {
 
     speaker = new audio();
     speaker->init();
-    speaker->playCaptureSound();
+    //speaker->play_tone(440, 2000, 0.25f);
 
-    // static int32_t continuous_audio_file[I2S_SAMPLE_RATE / 400 * 2] = {0};
-    // const uint32_t continuous_buffer_size = I2S_SAMPLE_RATE / 400 * 2;
+    static int32_t continuous_audio_file[I2S_SAMPLE_RATE / 400 * 2] = {0};
+    const uint32_t continuous_buffer_size = I2S_SAMPLE_RATE / 400 * 2;
 
-    // for (int i = 0; i < I2S_SAMPLE_RATE / 400; i++) {
-    //     // Generate a sine wave scaled to the full 32-bit signed integer range.
-    //     float sample_f = 0.5f * 0x0FFFFFFF * sinf(400.0f * 2 * M_PI * i / I2S_SAMPLE_RATE);
-    //     int32_t sample = (int32_t)sample_f;
-    //     continuous_audio_file[2 * i] = sample;
-    //     continuous_audio_file[2 * i + 1] = sample;
-    // }
+    for (int i = 0; i < I2S_SAMPLE_RATE / 400; i++) {
+        // Generate a sine wave scaled to the full 32-bit signed integer range.
+        float sample_f = 0.5f * 0x0FFFFFFF * sinf(400.0f * 2 * M_PI * i / I2S_SAMPLE_RATE);
+        int32_t sample = (int32_t)sample_f;
+        continuous_audio_file[2 * i] = sample;
+        continuous_audio_file[2 * i + 1] = sample;
+    }
 
-    //speaker->start_continuous_playback(continuous_audio_file, continuous_buffer_size);
+    speaker->start_continuous_playback(continuous_audio_file, continuous_buffer_size);
 
     gpio_output_init(STEP1_PIN);
     gpio_output_init(STEP2_PIN);
@@ -2389,7 +2389,7 @@ void app_main(void) {
     gpio_output_init(MODE0_PIN);
     gpio_output_init(MODE1_PIN);
     gpio_output_init(MODE2_PIN);
-
+    
     gpio_input_init(LIMIT_Y_PIN, GPIO_INTR_NEGEDGE);
     gpio_input_init(LIMIT_X_PIN, GPIO_INTR_NEGEDGE);
 
