@@ -2357,7 +2357,7 @@ void app_main(void) {
 
     speaker = new audio();
     speaker->init();
-    speaker->playCaptureSound();
+    speaker->play_tone(440, 2000, 0.25f);
 
     // static int32_t continuous_audio_file[I2S_SAMPLE_RATE / 400 * 2] = {0};
     // const uint32_t continuous_buffer_size = I2S_SAMPLE_RATE / 400 * 2;
@@ -2383,7 +2383,7 @@ void app_main(void) {
     gpio_output_init(MODE0_PIN);
     gpio_output_init(MODE1_PIN);
     gpio_output_init(MODE2_PIN);
-
+    
     gpio_input_init(LIMIT_Y_PIN, GPIO_INTR_NEGEDGE);
     gpio_input_init(LIMIT_X_PIN, GPIO_INTR_NEGEDGE);
 
