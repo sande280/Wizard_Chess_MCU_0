@@ -819,9 +819,9 @@ void serializeBoardState(ChessBoard& board, uint8_t* buffer) {
     }
 }
 
-// Serialize board state with game-over preamble (0x2F instead of 0xAA)
+// Serialize board state with player wins preamble (0x2F) - Player wins
 void serializeBoardStateGameOver(ChessBoard& board, uint8_t* buffer) {
-    buffer[0] = 0x2F;  // Game-over header
+    buffer[0] = 0x2F;  // Player wins header
     for (int i = 0; i < 32; i++) {
         int idx = i * 2;
         int row1 = idx / 8, col1 = idx % 8;
@@ -846,9 +846,35 @@ void serializeBoardStateFlipped(ChessBoard& board, uint8_t* buffer) {
     }
 }
 
-// Serialize board state flipped with game-over preamble (0x2F header)
+// Serialize board state flipped with game-over preamble (0x2F header) - Player wins
 void serializeBoardStateFlippedGameOver(ChessBoard& board, uint8_t* buffer) {
-    buffer[0] = 0x2F;  // Game-over header
+    buffer[0] = 0x2F;  // Player wins header
+    for (int i = 0; i < 32; i++) {
+        int idx = i * 2;
+        int row1 = 7 - (idx / 8), col1 = 7 - (idx % 8);
+        int row2 = 7 - ((idx + 1) / 8), col2 = 7 - ((idx + 1) % 8);
+        uint8_t high = pieceToNibble(board.getPiece(row1, col1));
+        uint8_t low = pieceToNibble(board.getPiece(row2, col2));
+        buffer[1 + i] = (high << 4) | low;
+    }
+}
+
+// Serialize board state with computer wins preamble (0x3F) - Computer wins
+void serializeBoardStateComputerWins(ChessBoard& board, uint8_t* buffer) {
+    buffer[0] = 0x3F;  // Computer wins header
+    for (int i = 0; i < 32; i++) {
+        int idx = i * 2;
+        int row1 = idx / 8, col1 = idx % 8;
+        int row2 = (idx + 1) / 8, col2 = (idx + 1) % 8;
+        uint8_t high = pieceToNibble(board.getPiece(row1, col1));
+        uint8_t low = pieceToNibble(board.getPiece(row2, col2));
+        buffer[1 + i] = (high << 4) | low;
+    }
+}
+
+// Serialize board state flipped with computer wins preamble (0x3F) - Computer wins
+void serializeBoardStateFlippedComputerWins(ChessBoard& board, uint8_t* buffer) {
+    buffer[0] = 0x3F;  // Computer wins header
     for (int i = 0; i < 32; i++) {
         int idx = i * 2;
         int row1 = 7 - (idx / 8), col1 = 7 - (idx % 8);
@@ -2312,14 +2338,13 @@ void aiResponseTask(void *pvParameter) {
             if (!oppCanMove) {
                 uint8_t gameOverBuffer[33];
                 if (oppInCheck) {
-                    // Checkmate - use 0x2F
-                    printf("Checkmate! %s wins!\n", (currentTurn == White) ? "White" : "Black");
+                    // Checkmate - opponent (player) is checkmated, computer wins - use 0x3F
+                    printf("Checkmate! Computer wins! (%s)\n", (currentTurn == White) ? "White" : "Black");
                     if (playerColor == Black) {
-                        serializeBoardStateFlippedGameOver(*boardPtr, gameOverBuffer);
+                        serializeBoardStateFlippedComputerWins(*boardPtr, gameOverBuffer);
                     } else {
-                        serializeBoardStateGameOver(*boardPtr, gameOverBuffer);
+                        serializeBoardStateComputerWins(*boardPtr, gameOverBuffer);
                     }
-                    fuck();
                 } else {
                     // Stalemate - use 0xEE
                     printf("Stalemate! Game is a draw.\n");
@@ -2361,31 +2386,31 @@ void app_main(void) {
     switches->init();
     switches->start_scan_task();
 
-    speaker = new audio();
-    speaker->init();
-    // speaker->play_tone(440, 2000, 0.25f);
+    // speaker = new audio();
+    // speaker->init();
+    // // speaker->play_tone(440, 2000, 0.25f);
 
-    static int32_t continuous_audio_file[I2S_SAMPLE_RATE / 400 * 2] = {0};
-    const uint32_t continuous_buffer_size = I2S_SAMPLE_RATE / 400 * 2;
+    // static int32_t continuous_audio_file[I2S_SAMPLE_RATE / 400 * 2] = {0};
+    // const uint32_t continuous_buffer_size = I2S_SAMPLE_RATE / 400 * 2;
 
-    for (int i = 0; i < I2S_SAMPLE_RATE / 400; i++) {
-        // Generate a sine wave scaled to the full 32-bit signed integer range.
-        float sample_f = 0.5f * 0x0FFFFFFF * sinf(400.0f * 2 * M_PI * i / I2S_SAMPLE_RATE);
-        int32_t sample = (int32_t)sample_f;
-        continuous_audio_file[2 * i] = sample;
-        continuous_audio_file[2 * i + 1] = sample;
-    }
+    // for (int i = 0; i < I2S_SAMPLE_RATE / 400; i++) {
+    //     // Generate a sine wave scaled to the full 32-bit signed integer range.
+    //     float sample_f = 0.5f * 0x0FFFFFFF * sinf(400.0f * 2 * M_PI * i / I2S_SAMPLE_RATE);
+    //     int32_t sample = (int32_t)sample_f;
+    //     continuous_audio_file[2 * i] = sample;
+    //     continuous_audio_file[2 * i + 1] = sample;
+    // }
 
-    speaker->start_continuous_playback(continuous_audio_file, continuous_buffer_size);
+    // speaker->start_continuous_playback(continuous_audio_file, continuous_buffer_size);
 
-    static int32_t chicken[2] = {0};
-    const uint32_t duck = 2;
+    // static int32_t chicken[2] = {0};
+    // const uint32_t duck = 2;
 
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    // vTaskDelay(pdMS_TO_TICKS(2000));
 
-    speaker->start_continuous_playback(chicken, duck);
+    // //speaker->start_continuous_playback(chicken, duck);
 
-    speaker->stop_continuous_playback();
+    // speaker->stop_continuous_playback();
 
     gpio_output_init(STEP1_PIN);
     gpio_output_init(STEP2_PIN);
@@ -3111,17 +3136,31 @@ void app_main(void) {
                 i2c_reset_tx_fifo(I2C_SLAVE_PORT);
                 vTaskDelay(pdMS_TO_TICKS(100));
 
-                // Use game-over preamble (0x2F for checkmate, 0xEE for stalemate)
+                // Use game-over preamble (0x2F for player wins, 0x3F for computer wins, 0xEE for stalemate)
                 // Use flipped version for black player perspective
                 if (gameOver) {
                     if (inCheck) {
-                        // Checkmate - use 0x2F
-                        if (playerColor == Black) {
-                            serializeBoardStateFlippedGameOver(board, tx_buffer);
+                        // Checkmate - determine who wins based on who is checkmated
+                        bool computerWins = (currentTurn == playerColor);
+                        if (computerWins) {
+                            // Player is checkmated - computer wins - use 0x3F
+                            printf("CHECKMATE! Computer wins!\n");
+                            if (playerColor == Black) {
+                                serializeBoardStateFlippedComputerWins(board, tx_buffer);
+                            } else {
+                                serializeBoardStateComputerWins(board, tx_buffer);
+                            }
+                            printf("Sent CHECKMATE board state with 0x3F preamble (computer wins): ");
                         } else {
-                            serializeBoardStateGameOver(board, tx_buffer);
+                            // Computer is checkmated - player wins - use 0x2F
+                            printf("CHECKMATE! Player wins!\n");
+                            if (playerColor == Black) {
+                                serializeBoardStateFlippedGameOver(board, tx_buffer);
+                            } else {
+                                serializeBoardStateGameOver(board, tx_buffer);
+                            }
+                            printf("Sent CHECKMATE board state with 0x2F preamble (player wins): ");
                         }
-                        printf("Sent CHECKMATE board state with 0x2F preamble (33 bytes): ");
                     } else {
                         // Stalemate - use 0xEE
                         if (playerColor == Black) {
