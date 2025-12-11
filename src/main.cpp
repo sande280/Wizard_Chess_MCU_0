@@ -2013,7 +2013,7 @@ void piecePickupDetectionTask(void *pvParameter) {
                                        selectedRow, selectedCol, destRow, destCol);
 
                                 // Re-sync board_state for pathfinding after player move
-                                setupMoveTracking(boardPtr);
+                                //setupMoveTracking(boardPtr);
 
                                 // Mark first move as made and show WHITE ambient
                                 if (!firstMoveMade) {
@@ -2336,7 +2336,7 @@ void aiResponseTask(void *pvParameter) {
             boardPtr->movePiece(aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
 
             // Re-sync board_state for pathfinding after AI move
-            setupMoveTracking(boardPtr);
+            //setupMoveTracking(boardPtr);
             // rest_motors();
 
             // Mark first move as made (important for AI's first move when playing as black)

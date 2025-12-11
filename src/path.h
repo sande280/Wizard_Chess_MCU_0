@@ -255,13 +255,15 @@ std::list<RestorationJob> movePieceSmart(int startX, int startY, int endX, int e
         }
 
         // --- 4. Execute Move ---
+        //Update board state
+        board_state[nextStep.x][nextStep.y] = board_state[currentPos.x][currentPos.y];
+        board_state[currentPos.x][currentPos.y] = 0;
+        
         plan_move(currentPos.x, currentPos.y, nextStep.x, nextStep.y, true);
         if(!restore)
             restorationQueue.push_back({nextStep, currentPos});
         
-        //Update board state
-        board_state[nextStep.x][nextStep.y] = board_state[currentPos.x][currentPos.y];
-        board_state[currentPos.x][currentPos.y] = 0;
+        
 
         currentPos = nextStep;
         
