@@ -2412,8 +2412,10 @@ void app_main(void) {
                 i2c_slave_write_buffer(I2C_SLAVE_PORT, i2c_starter, sizeof(i2c_starter), pdMS_TO_TICKS(100));
             }
             else if (rx_buffer[0] == 0x11 && rx_buffer[1] == 0x11 && bytes_read >= 2) {
-                // Handle 11 - Request for current board state
                 esp_restart();
+            }
+            else if (rx_buffer[0] == 0x77 && rx_buffer[1] == 0x78 && bytes_read >= 2) {
+                bool holdB = home_gantry();
             }
             // Handle 3D - Game mode setup
             else if (rx_buffer[0] == 0x3D && bytes_read >= 2) {
