@@ -2218,6 +2218,11 @@ void aiResponseTask(void *pvParameter) {
                 int physCapturedCol = capturedPawnRow;   // Row where captured pawn was
                 Color opponentColor = (aiColor == White) ? Black : White;
 
+                // Play capture sound
+                if (speaker != nullptr) {
+                    speaker->play_tone(440, 1000, 0.5f);
+                }
+
                 // Move captured pawn to capture zone
                 auto [capZoneRow, capZoneCol] = getNextCaptureSlot(opponentColor);
                 printf("AI: Moving en passant captured pawn from (%d,%d) to zone (%d,%d)\n",
@@ -2244,6 +2249,11 @@ void aiResponseTask(void *pvParameter) {
                 printf("AI: Moving captured %s piece to capture zone (%d, %d)\n",
                        targetPiece->getColor() == White ? "white" : "black",
                        capZoneRow, capZoneCol);
+
+                // Play capture sound
+                if (speaker != nullptr) {
+                    speaker->play_tone(440, 1000, 0.5f);
+                }
 
                 // Move captured piece from destination to capture zone
                 movePieceSmart(physToRow, physToCol, capZoneRow, capZoneCol);
@@ -2464,7 +2474,7 @@ void app_main(void) {
         xTaskCreate(moveDispatchTask, "MoveDispatch", 8192, NULL, 10, NULL);
     }
 
-    speaker->play_tone(440, 2000, 0.5f);
+    speaker->play_tone(440, 1000, 0.5f);
     
     // ------------movement tests---------------
     // plan_move(0, 0, 2, 0, true);
@@ -3032,6 +3042,11 @@ void app_main(void) {
                                     Color opponentColor = (aiColor == White) ? Black : White;
                                     auto [capZoneRow, capZoneCol] = getNextCaptureSlot(opponentColor);
 
+                                    // Play capture sound
+                                    if (speaker != nullptr) {
+                                        speaker->play_tone(440, 1000, 0.5f);
+                                    }
+
                                     //plan_move(physCapturedRow, physCapturedCol, capZoneRow, capZoneCol, false);
                                     wait_for_movement_complete(30000);
                                     // En passant pawn move is single diagonal - always direct
@@ -3043,6 +3058,11 @@ void app_main(void) {
                                     // REGULAR CAPTURE - use stored aiCapturedColor
                                     auto [capZoneRow, capZoneCol] = getNextCaptureSlot(aiCapturedColor);
                                     printf("UI AI: Capture move, target to zone (%d,%d)\n", capZoneRow, capZoneCol);
+
+                                    // Play capture sound
+                                    if (speaker != nullptr) {
+                                        speaker->play_tone(440, 1000, 0.5f);
+                                    }
 
                                     movePieceSmart(physToRow, physToCol, capZoneRow, capZoneCol);
                                     //plan_move(physToRow, physToCol, capZoneRow, capZoneCol, false);
