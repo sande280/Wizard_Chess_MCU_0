@@ -6,7 +6,7 @@ static const char* TAG = "AUDIO";
 
 // Declare external audio data
 // Make sure these match the definition in your data file
-extern const int16_t captureAudio[];
+extern const int32_t captureAudio[];
 extern const uint32_t captureAudioSize;
 
 void audio::init_gpio()
