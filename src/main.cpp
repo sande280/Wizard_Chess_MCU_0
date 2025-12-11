@@ -1698,6 +1698,7 @@ bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, float over
 }
 
 void moveDispatchTask(void *pvParameters) {
+    long int input_time = esp_timer_get_time() / 1000; // in ms
     while (true) {
         // If idle and there are queued moves, dispatch the next one
         if (gantry.position_reached && !move_queue_is_empty() && !gantry.home_active) {
@@ -1705,6 +1706,7 @@ void moveDispatchTask(void *pvParameters) {
             if (move_queue_pop(&next)) {
                 ESP_LOGI("MOVE", "Dispatching queued move to (%.2f, %.2f) speed=%.1f overshoot=%.1f magnet=%d", next.x, next.y, next.speed, next.overshoot, next.magnet ? 1 : 0);
                 moveToXY(next.x, next.y, next.speed, next.overshoot, next.magnet);
+                input_time = esp_timer_get_time() / 1000;
             }
             else {
                 ESP_LOGI("INIT", "Pop failed unexpectedly");
@@ -1714,6 +1716,10 @@ void moveDispatchTask(void *pvParameters) {
             // ESP_LOGI("MOVE", "Idle: position reached");
             vTaskDelay(pdMS_TO_TICKS(100));
             gpio_set_level(HFS_PIN, 1);
+
+            if (gantry.zero_set && (esp_timer_get_time() / 1000 - input_time) > MOTOR_SLEEP_TIMEOUT_MS && !gantry.home_active) {
+                rest_motors();
+            }
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
