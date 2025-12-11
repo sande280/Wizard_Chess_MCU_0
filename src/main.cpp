@@ -2411,6 +2411,10 @@ void app_main(void) {
                 printf("Handshake received - responding with 1A 2B 3C\n");
                 i2c_slave_write_buffer(I2C_SLAVE_PORT, i2c_starter, sizeof(i2c_starter), pdMS_TO_TICKS(100));
             }
+            else if (rx_buffer[0] == 0x11 && rx_buffer[1] == 0x11 && bytes_read >= 2) {
+                // Handle 11 - Request for current board state
+                esp_restart();
+            }
             // Handle 3D - Game mode setup
             else if (rx_buffer[0] == 0x3D && bytes_read >= 2) {
                 uint8_t mode = (rx_buffer[1] >> 4) & 0x0F;
