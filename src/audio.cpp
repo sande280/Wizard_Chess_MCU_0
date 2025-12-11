@@ -186,7 +186,6 @@ void audio::play_tone(uint32_t frequency, uint32_t duration_ms, float volume)
         int32_t sample = (int32_t)sample_f;
         continuous_audio_file[2 * i] = sample;
         continuous_audio_file[2 * i + 1] = sample;
-        vTaskDelay(10);
     }
 
     speaker->play_oneshot(continuous_audio_file, continuous_buffer_size);
