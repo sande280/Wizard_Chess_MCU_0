@@ -1704,7 +1704,7 @@ bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, float over
 void moveDispatchTask(void *pvParameters) {
     while (true) {
         // If idle and there are queued moves, dispatch the next one
-        if (gantry.position_reached && !move_queue_is_empty()) {
+        if (gantry.position_reached && !move_queue_is_empty() && !gantry.home_active) {
             MoveCommand next;
             if (move_queue_pop(&next)) {
                 ESP_LOGI("MOVE", "Dispatching queued move to (%.2f, %.2f) speed=%.1f overshoot=%.1f magnet=%d", next.x, next.y, next.speed, next.overshoot, next.magnet ? 1 : 0);
