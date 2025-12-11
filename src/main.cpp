@@ -2659,18 +2659,18 @@ void app_main(void) {
                     printf("Turn changed to: %s\n", currentTurn == White ? "White" : "Black");
 
                     // Send updated board state to UI IMMEDIATELY (before physical movements)
-                    {
-                        vTaskDelay(pdMS_TO_TICKS(50));
-                        i2c_reset_tx_fifo(I2C_SLAVE_PORT);
-                        vTaskDelay(pdMS_TO_TICKS(50));
-                        if (playerColor == Black) {
-                            serializeBoardStateFlipped(board, tx_buffer);
-                        } else {
-                            serializeBoardState(board, tx_buffer);
-                        }
-                        i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, sizeof(tx_buffer), pdMS_TO_TICKS(1000));
-                        printf("Sent player move board state to UI\n");
-                    }
+                    // {
+                    //     vTaskDelay(pdMS_TO_TICKS(50));
+                    //     i2c_reset_tx_fifo(I2C_SLAVE_PORT);
+                    //     vTaskDelay(pdMS_TO_TICKS(50));
+                    //     if (playerColor == Black) {
+                    //         serializeBoardStateFlipped(board, tx_buffer);
+                    //     } else {
+                    //         serializeBoardState(board, tx_buffer);
+                    //     }
+                    //     i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, sizeof(tx_buffer), pdMS_TO_TICKS(1000));
+                    //     printf("Sent player move board state to UI\n");
+                    // }
 
                     // Show WHITE ambient under all pieces
                     if (led != nullptr) {
