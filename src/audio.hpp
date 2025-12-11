@@ -7,6 +7,8 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 
+#include "captureSound.hpp"
+
 #include <stdlib.h>
 #include <cmath>
 #include <cstdint>
@@ -51,13 +53,20 @@ private:
 
     // Members for continuous playback task
     TaskHandle_t m_playback_task_handle = NULL;
-    int32_t* m_continuous_audio_buffer = NULL;
+    const int32_t* m_continuous_audio_buffer = NULL;
     uint32_t m_continuous_buffer_size = 0;
 
     // Members for one-shot playback
     volatile bool m_play_oneshot_flag = false;
-    int32_t* m_oneshot_audio_buffer = NULL;
+    
+    // Union to hold pointer to either 32-bit or 16-bit buffer
+    union {
+        const int32_t* buffer32;
+        const int16_t* buffer16;
+    } m_oneshot_audio_buffer;
+    
     uint32_t m_oneshot_buffer_size = 0;
+    bool m_oneshot_is_16bit = false;
 
 public:
     /**
@@ -69,14 +78,14 @@ public:
      * Writes a single buffer of audio data to the I2S driver.
      * This is a blocking call.
      */
-    void play_sound(int32_t* audio_file, uint32_t audio_size);
+    void play_sound(const int32_t* audio_file, uint32_t audio_size);
 
     /**
      * Starts a background task to play an audio buffer continuously.
      * @param audio_buffer The buffer containing audio data to loop.
      * @param buffer_size The size of the buffer in 32-bit words.
      */
-    void start_continuous_playback(int32_t* audio_buffer, uint32_t buffer_size);
+    void start_continuous_playback(const int32_t* audio_buffer, uint32_t buffer_size);
 
     /**
      * Stops the continuous playback background task.
@@ -88,13 +97,17 @@ public:
      * @param audio_buffer The buffer containing the one-shot sound.
      * @param buffer_size The size of the buffer in 32-bit words.
      */
-    void play_oneshot(int32_t* audio_buffer, uint32_t buffer_size);
+    void play_oneshot(const int32_t* audio_buffer, uint32_t buffer_size);
+
+    void play_oneshot(const int16_t* audio_buffer, uint32_t buffer_size);
 
     /**
      * Sets the mute pin on the audio amplifier for power savings
      * True = Outputs off
      */
     void set_mute(bool mute);
+
+    void playCaptureSound();
 
 };
 

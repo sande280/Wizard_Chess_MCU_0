@@ -1802,6 +1802,11 @@ void piecePickupDetectionTask(void *pvParameter) {
                        selectedRow, currentTurn, playerColor, pieceHeld ? 1 : 0);
             }
 
+            // Track pending capture (when opponent piece lifted before user places their piece)
+            static int pendingCaptureRow = -1;
+            static int pendingCaptureCol = -1;
+            static ChessPiece* pendingCapturePiece = nullptr;
+
             // Check main board area (physical rows 2-9 = chess cols 7-0)
             // Coordinate mapping (matching LEDs): physRow = 9 - chessCol, physCol = chessRow
             for (int physRow = 2; physRow < 10; physRow++) {
@@ -1844,6 +1849,33 @@ void piecePickupDetectionTask(void *pvParameter) {
                     }
                 }
 
+                // Detect opponent piece lifted while our piece is selected (capture in progress)
+                if (lifted && selectedRow >= 0 && pendingCapturePiece == nullptr) {
+                    for (int physCol = 0; physCol < 8; physCol++) {
+                        if (lifted & (1 << physCol)) {
+                            int liftedRow = physCol;
+                            int liftedCol = chessCol;
+
+                            // Check if this is a valid capture destination
+                            auto possibleMoves = boardPtr->getPossibleMoves(selectedRow, selectedCol);
+                            for (const auto& move : possibleMoves) {
+                                if (move.first == liftedRow && move.second == liftedCol) {
+                                    // This is the opponent's piece being captured
+                                    ChessPiece* piece = boardPtr->getPiece(liftedRow, liftedCol);
+                                    if (piece && piece->getColor() != currentTurn) {
+                                        pendingCaptureRow = liftedRow;
+                                        pendingCaptureCol = liftedCol;
+                                        pendingCapturePiece = piece;
+                                        printf("Capture in progress: opponent piece at (%d,%d) lifted\n",
+                                               liftedRow, liftedCol);
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Detect piece placed: was absent (0), now present (1)
                 uint8_t placed = ~prev & curr;
 
@@ -1861,6 +1893,11 @@ void piecePickupDetectionTask(void *pvParameter) {
                                 printf("Piece returned to original square - move cancelled\n");
                                 pieceHeld = false;
                                 selectedRow = selectedCol = -1;
+
+                                // Clear pending capture state
+                                pendingCaptureRow = -1;
+                                pendingCaptureCol = -1;
+                                pendingCapturePiece = nullptr;
 
                                 // Restore ambient LEDs
                                 if (led != nullptr) {
@@ -1898,8 +1935,19 @@ void piecePickupDetectionTask(void *pvParameter) {
                                 continue;  // Don't clear selection, let player try again
                             }
 
-                            // Check if this is a capture move - enemy piece at destination
-                            ChessPiece* targetPiece = boardPtr->getPiece(destRow, destCol);
+                            // Check if this is a capture move
+                            ChessPiece* targetPiece = nullptr;
+                            if (pendingCapturePiece != nullptr &&
+                                destRow == pendingCaptureRow && destCol == pendingCaptureCol) {
+                                // Use the pending capture piece (was lifted before placement)
+                                targetPiece = pendingCapturePiece;
+                                printf("Completing capture: piece was pre-lifted from (%d,%d)\n",
+                                       pendingCaptureRow, pendingCaptureCol);
+                            } else {
+                                // Normal case: check if piece still on board
+                                targetPiece = boardPtr->getPiece(destRow, destCol);
+                            }
+
                             if (targetPiece != nullptr) {
                                 // This is a capture - in physical mode, player handles it manually
                                 // Just increment the capture counter (getNextCaptureSlot does this)
@@ -1940,6 +1988,11 @@ void piecePickupDetectionTask(void *pvParameter) {
                                 }
 
                                 selectedRow = selectedCol = -1;
+
+                                // Clear pending capture state
+                                pendingCaptureRow = -1;
+                                pendingCaptureCol = -1;
+                                pendingCapturePiece = nullptr;
                             } else {
                                 printf("Physical move failed unexpectedly\n");
                                 // Keep selection so player can try again
@@ -2017,7 +2070,32 @@ void aiResponseTask(void *pvParameter) {
             AIMove aiMove = ai.findBestMove(*boardPtr, currentTurn, 3);
 
             if (aiMove.fromRow < 0) {
-                printf("AI has no valid moves - game over?\n");
+                // AI has no valid moves - determine if checkmate or stalemate
+                bool aiInCheck = boardPtr->isKingInCheck(currentTurn);
+                uint8_t gameOverBuffer[33];
+
+                if (aiInCheck) {
+                    // Checkmate - player wins!
+                    printf("CHECKMATE! %s wins!\n", (playerColor == White) ? "White" : "Black");
+                    if (playerColor == Black) {
+                        serializeBoardStateFlippedGameOver(*boardPtr, gameOverBuffer);
+                    } else {
+                        serializeBoardStateGameOver(*boardPtr, gameOverBuffer);
+                    }
+                } else {
+                    // Stalemate - draw
+                    printf("STALEMATE! Game is a draw.\n");
+                    if (playerColor == Black) {
+                        serializeBoardStateFlippedStalemate(*boardPtr, gameOverBuffer);
+                    } else {
+                        serializeBoardStateStalemate(*boardPtr, gameOverBuffer);
+                    }
+                }
+
+                // Send game-over message to UI
+                i2c_slave_write_buffer(I2C_SLAVE_PORT, gameOverBuffer, 33, pdMS_TO_TICKS(100));
+                printf("Sent game-over state to UI (0x%02X preamble)\n", gameOverBuffer[0]);
+
                 vTaskDelay(pdMS_TO_TICKS(100));
                 continue;
             }
@@ -2152,10 +2230,7 @@ void aiResponseTask(void *pvParameter) {
                     // }
                 }
 
-                if (!wait_for_movement_complete(30000)) {
-                    printf("AI move timed out\n");
-                    continue;
-                }
+                wait_for_movement_complete(30000);
 
                 result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
 
@@ -2175,10 +2250,7 @@ void aiResponseTask(void *pvParameter) {
                     movePieceSmart(physFromRow, physFromCol, physToRow, physToCol);
                 //}
 
-                if (!wait_for_movement_complete(30000)) {
-                    printf("AI move timed out\n");
-                    continue;
-                }
+                wait_for_movement_complete(30000);
 
                 result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
             }
@@ -2289,19 +2361,20 @@ void app_main(void) {
 
     speaker = new audio();
     speaker->init();
+    speaker->playCaptureSound();
 
-    static int32_t continuous_audio_file[I2S_SAMPLE_RATE / 400 * 2] = {0};
-    const uint32_t continuous_buffer_size = I2S_SAMPLE_RATE / 400 * 2;
+    // static int32_t continuous_audio_file[I2S_SAMPLE_RATE / 400 * 2] = {0};
+    // const uint32_t continuous_buffer_size = I2S_SAMPLE_RATE / 400 * 2;
 
-    for (int i = 0; i < I2S_SAMPLE_RATE / 400; i++) {
-        // Generate a sine wave scaled to the full 32-bit signed integer range.
-        float sample_f = 0.5f * 0x0FFFFFFF * sinf(400.0f * 2 * M_PI * i / I2S_SAMPLE_RATE);
-        int32_t sample = (int32_t)sample_f;
-        continuous_audio_file[2 * i] = sample;
-        continuous_audio_file[2 * i + 1] = sample;
-    }
+    // for (int i = 0; i < I2S_SAMPLE_RATE / 400; i++) {
+    //     // Generate a sine wave scaled to the full 32-bit signed integer range.
+    //     float sample_f = 0.5f * 0x0FFFFFFF * sinf(400.0f * 2 * M_PI * i / I2S_SAMPLE_RATE);
+    //     int32_t sample = (int32_t)sample_f;
+    //     continuous_audio_file[2 * i] = sample;
+    //     continuous_audio_file[2 * i + 1] = sample;
+    // }
 
-    speaker->start_continuous_playback(continuous_audio_file, continuous_buffer_size);
+    //speaker->start_continuous_playback(continuous_audio_file, continuous_buffer_size);
 
     gpio_output_init(STEP1_PIN);
     gpio_output_init(STEP2_PIN);
