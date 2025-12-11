@@ -19,6 +19,7 @@
 #include "driver/ledc.h"
 #include "esp_timer.h"
 #include "driver/i2c.h"
+#include <nvs_flash.h>
 // #include "ota_server.hpp"
 
 //Chess Includes (Jackson)
@@ -2387,6 +2388,20 @@ extern "C" {
 
 void app_main(void) {
     
+
+    // 1. Erase NVS (Wipes WiFi, Preferences, Ble Bonding)
+    esp_err_t ret = nvs_flash_erase();
+    
+    // 2. Initialize NVS (Required after erase to use WiFi/BT)
+    ret = nvs_flash_init(); 
+    
+    // Check for errors (optional but good practice)
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
     // start_ota_server();
 
     ESP_LOGI(TAG, "Starting ESP32 Chess Game with I2C UI Integration");
