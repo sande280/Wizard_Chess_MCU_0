@@ -1745,7 +1745,18 @@ void moveDispatchTask(void *pvParameters) {
             //printf("%lld\n", (esp_timer_get_time() / 1000) - input_time);
 
             if (gantry.zero_set && (((esp_timer_get_time() / 1000) - input_time) > MOTOR_SLEEP_TIMEOUT_MS) && !gantry.home_active) {
-                rest_motors();
+                moveToXY(board_pos[0][0][0], board_pos[0][0][1], 200.0f, 0.0f, false); // move to home position
+                while(!gantry.position_reached) {
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                }
+                if (!move_queue_is_empty()) {
+                    ESP_LOGI("REST_MOTORS", "New move added waiting for rest, aborting rest.");
+                }
+                else {
+                    gantry.zero_set = false;
+                    gpio_set_level(SLEEP_PIN, 0); //disable motors
+                    ESP_LOGI("REST_MOTORS", "Motor rest");
+                }
             }
         }
         vTaskDelay(pdMS_TO_TICKS(100));
