@@ -2415,7 +2415,7 @@ void app_main(void) {
                 esp_restart();
             }
             else if (rx_buffer[0] == 0x77 && rx_buffer[1] == 0x78 && bytes_read >= 2) {
-                bool holdB = home_gantry();
+                rest_motors();
             }
             // Handle 3D - Game mode setup
             else if (rx_buffer[0] == 0x3D && bytes_read >= 2) {

@@ -65,7 +65,7 @@ int home_gantry();
 int correct_movement(int fix_x, int fix_y);
 void yeet_piece(int A_from, int B_from);
 void fuck();
-// void rest_motors();
+void rest_motors();
 
 // Declare moveToXY so it can be used in motionPos.cpp
 bool moveToXY(float x_target_mm, float y_target_mm, float speed_mm_s, float overshoot, bool magnet_on);
