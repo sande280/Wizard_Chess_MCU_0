@@ -1742,6 +1742,7 @@ void moveDispatchTask(void *pvParameters) {
             // ESP_LOGI("MOVE", "Idle: position reached");
             vTaskDelay(pdMS_TO_TICKS(100));
             gpio_set_level(HFS_PIN, 1);
+            printf("%lld\n", (esp_timer_get_time() / 1000) - input_time);
 
             if (gantry.zero_set && (((esp_timer_get_time() / 1000) - input_time) > MOTOR_SLEEP_TIMEOUT_MS) && !gantry.home_active) {
                 rest_motors();
@@ -2408,7 +2409,6 @@ void app_main(void) {
 
     // vTaskDelay(pdMS_TO_TICKS(2000));
 
-    // //speaker->start_continuous_playback(chicken, duck);
 
     // speaker->stop_continuous_playback();
 
@@ -2950,9 +2950,9 @@ void app_main(void) {
 
                     // In UI mode, if it's AI's turn, make AI move
                     if (currentMode == MODE_UI && currentTurn != playerColor) {
-                            printf("AI thinking (minimax depth 2)...\n");
+                            printf("AI thinking (minimax depth 3)...\n");
                             ChessAI ai;
-                            AIMove aiMove = ai.findBestMove(board, currentTurn, 2);
+                            AIMove aiMove = ai.findBestMove(board, currentTurn, 3);
                             if (aiMove.fromRow >= 0) {
                                 printf("AI move: (%d,%d) -> (%d,%d), score=%.2f\n",
                                        aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol, aiMove.score);
