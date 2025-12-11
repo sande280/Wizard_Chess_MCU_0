@@ -2357,7 +2357,7 @@ void app_main(void) {
 
     speaker = new audio();
     speaker->init();
-    //speaker->play_tone(440, 2000, 0.25f);
+    // speaker->play_tone(440, 2000, 0.25f);
 
     static int32_t continuous_audio_file[I2S_SAMPLE_RATE / 400 * 2] = {0};
     const uint32_t continuous_buffer_size = I2S_SAMPLE_RATE / 400 * 2;
@@ -2371,6 +2371,10 @@ void app_main(void) {
     }
 
     speaker->start_continuous_playback(continuous_audio_file, continuous_buffer_size);
+
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
+    speaker->stop_continuous_playback();
 
     gpio_output_init(STEP1_PIN);
     gpio_output_init(STEP2_PIN);
