@@ -3151,6 +3151,7 @@ void app_main(void) {
                                 serializeBoardStateComputerWins(board, tx_buffer);
                             }
                             printf("Sent CHECKMATE board state with 0x3F preamble (computer wins): ");
+                            fuck();
                         } else {
                             // Computer is checkmated - player wins - use 0x2F
                             printf("CHECKMATE! Player wins!\n");
@@ -3160,6 +3161,7 @@ void app_main(void) {
                                 serializeBoardStateGameOver(board, tx_buffer);
                             }
                             printf("Sent CHECKMATE board state with 0x2F preamble (player wins): ");
+                            fuck();
                         }
                     } else {
                         // Stalemate - use 0xEE
