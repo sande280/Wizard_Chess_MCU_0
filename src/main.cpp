@@ -2290,12 +2290,12 @@ void app_main(void) {
     speaker = new audio();
     speaker->init();
 
-    static int32_t continuous_audio_file[1024*2] = {0};
-    const uint32_t continuous_buffer_size = 1024 * 2;
+    static int32_t continuous_audio_file[I2S_SAMPLE_RATE / 400 * 2] = {0};
+    const uint32_t continuous_buffer_size = I2S_SAMPLE_RATE / 400 * 2;
 
-    for (int i = 0; i < 1024; i++) {
+    for (int i = 0; i < I2S_SAMPLE_RATE / 400; i++) {
         // Generate a sine wave scaled to the full 32-bit signed integer range.
-        float sample_f = 0.5f * 0x03FFFFFF * sinf(440.0f * 2 * M_PI * i / I2S_SAMPLE_RATE);
+        float sample_f = 0.5f * 0x0FFFFFFF * sinf(400.0f * 2 * M_PI * i / I2S_SAMPLE_RATE);
         int32_t sample = (int32_t)sample_f;
         continuous_audio_file[2 * i] = sample;
         continuous_audio_file[2 * i + 1] = sample;
@@ -2410,6 +2410,12 @@ void app_main(void) {
             if (bytes_read >= 3 && rx_buffer[0] == 0xA1 && rx_buffer[1] == 0xB2 && rx_buffer[2] == 0xC3) {
                 printf("Handshake received - responding with 1A 2B 3C\n");
                 i2c_slave_write_buffer(I2C_SLAVE_PORT, i2c_starter, sizeof(i2c_starter), pdMS_TO_TICKS(100));
+            }
+            else if (rx_buffer[0] == 0x11 && rx_buffer[1] == 0x11 && bytes_read >= 2) {
+                esp_restart();
+            }
+            else if (rx_buffer[0] == 0x77 && rx_buffer[1] == 0x78 && bytes_read >= 2) {
+                bool holdB = home_gantry();
             }
             // Handle 3D - Game mode setup
             else if (rx_buffer[0] == 0x3D && bytes_read >= 2) {
@@ -2653,18 +2659,18 @@ void app_main(void) {
                     printf("Turn changed to: %s\n", currentTurn == White ? "White" : "Black");
 
                     // Send updated board state to UI IMMEDIATELY (before physical movements)
-                    {
-                        vTaskDelay(pdMS_TO_TICKS(50));
-                        i2c_reset_tx_fifo(I2C_SLAVE_PORT);
-                        vTaskDelay(pdMS_TO_TICKS(50));
-                        if (playerColor == Black) {
-                            serializeBoardStateFlipped(board, tx_buffer);
-                        } else {
-                            serializeBoardState(board, tx_buffer);
-                        }
-                        i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, sizeof(tx_buffer), pdMS_TO_TICKS(1000));
-                        printf("Sent player move board state to UI\n");
-                    }
+                    // {
+                    //     vTaskDelay(pdMS_TO_TICKS(50));
+                    //     i2c_reset_tx_fifo(I2C_SLAVE_PORT);
+                    //     vTaskDelay(pdMS_TO_TICKS(50));
+                    //     if (playerColor == Black) {
+                    //         serializeBoardStateFlipped(board, tx_buffer);
+                    //     } else {
+                    //         serializeBoardState(board, tx_buffer);
+                    //     }
+                    //     i2c_slave_write_buffer(I2C_SLAVE_PORT, tx_buffer, sizeof(tx_buffer), pdMS_TO_TICKS(1000));
+                    //     printf("Sent player move board state to UI\n");
+                    // }
 
                     // Show WHITE ambient under all pieces
                     if (led != nullptr) {
