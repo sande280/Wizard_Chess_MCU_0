@@ -7,6 +7,8 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 
+#include "captureSound.hpp"
+
 #include <stdlib.h>
 #include <cmath>
 #include <cstdint>
@@ -95,6 +97,8 @@ public:
      * True = Outputs off
      */
     void set_mute(bool mute);
+
+    void playCaptureSound();
 
 };
 

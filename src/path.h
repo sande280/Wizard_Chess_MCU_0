@@ -15,7 +15,7 @@
 #define COST_STRAIGHT       10
 #define COST_DIAGONAL       14
 #define PENALTY_OCCUPIED    500
-#define PENALTY_SQUEEZE     1500
+#define PENALTY_SQUEEZE     10000
 
 using namespace Student;
 using namespace std;
@@ -221,7 +221,7 @@ std::list<RestorationJob> movePieceSmart(int startX, int startY, int endX, int e
         
         // --- Optimization Loop ---
         while (i + 1 < path.size()) {
-            //Check if i is populated or if we have a diagonal
+            //Check if i is populated
             if (isPopulated(nextStep.x, nextStep.y) && nextStep != end) {
                 Point parkingSpot = findParkingBuff(nextStep, path);
             

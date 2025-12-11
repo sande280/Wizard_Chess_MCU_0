@@ -32,7 +32,7 @@ void audio::init_i2s()
     // Configure the I2S channel
     i2s_std_config_t std_cfg = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(I2S_SAMPLE_RATE),
-        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_BITS_PER_SAMPLE, I2S_CHANNEL_FORMAT),
+        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_CHANNEL_FORMAT),
         .gpio_cfg = {
             .mclk = I2S_MCK_IO,
             .bclk = I2S_BCLK_IO,
@@ -168,3 +168,15 @@ void audio::play_oneshot(int32_t* audio_buffer, uint32_t buffer_size)
     // Set the flag to trigger playback in the task
     m_play_oneshot_flag = true;
 }
+
+void audio::playCaptureSound()
+{
+    int32_t* expanded = new int32_t[captureAudioSize * 2];
+    for(int i = 0; i < captureAudioSize; i++)
+    {
+        expanded[2*i] = captureAudio[i] << 16;
+        expanded[2*i + 1] = captureAudio[i] << 16;
+    }
+
+    play_oneshot(expanded, captureAudioSize * 2);
+}   
