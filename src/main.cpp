@@ -2070,7 +2070,32 @@ void aiResponseTask(void *pvParameter) {
             AIMove aiMove = ai.findBestMove(*boardPtr, currentTurn, 3);
 
             if (aiMove.fromRow < 0) {
-                printf("AI has no valid moves - game over?\n");
+                // AI has no valid moves - determine if checkmate or stalemate
+                bool aiInCheck = boardPtr->isKingInCheck(currentTurn);
+                uint8_t gameOverBuffer[33];
+
+                if (aiInCheck) {
+                    // Checkmate - player wins!
+                    printf("CHECKMATE! %s wins!\n", (playerColor == White) ? "White" : "Black");
+                    if (playerColor == Black) {
+                        serializeBoardStateFlippedGameOver(*boardPtr, gameOverBuffer);
+                    } else {
+                        serializeBoardStateGameOver(*boardPtr, gameOverBuffer);
+                    }
+                } else {
+                    // Stalemate - draw
+                    printf("STALEMATE! Game is a draw.\n");
+                    if (playerColor == Black) {
+                        serializeBoardStateFlippedStalemate(*boardPtr, gameOverBuffer);
+                    } else {
+                        serializeBoardStateStalemate(*boardPtr, gameOverBuffer);
+                    }
+                }
+
+                // Send game-over message to UI
+                i2c_slave_write_buffer(I2C_SLAVE_PORT, gameOverBuffer, 33, pdMS_TO_TICKS(100));
+                printf("Sent game-over state to UI (0x%02X preamble)\n", gameOverBuffer[0]);
+
                 vTaskDelay(pdMS_TO_TICKS(100));
                 continue;
             }
@@ -2205,10 +2230,7 @@ void aiResponseTask(void *pvParameter) {
                     // }
                 }
 
-                if (!wait_for_movement_complete(30000)) {
-                    printf("AI move timed out\n");
-                    continue;
-                }
+                wait_for_movement_complete(30000);
 
                 result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
 
@@ -2228,10 +2250,7 @@ void aiResponseTask(void *pvParameter) {
                     movePieceSmart(physFromRow, physFromCol, physToRow, physToCol);
                 //}
 
-                if (!wait_for_movement_complete(30000)) {
-                    printf("AI move timed out\n");
-                    continue;
-                }
+                wait_for_movement_complete(30000);
 
                 result = verify_simple_move(physFromRow, physFromCol, physToRow, physToCol);
             }
@@ -2342,6 +2361,7 @@ void app_main(void) {
 
     speaker = new audio();
     speaker->init();
+    //speaker->playCaptureSound();
 
     // static int32_t continuous_audio_file[I2S_SAMPLE_RATE / 400 * 2] = {0};
     // const uint32_t continuous_buffer_size = I2S_SAMPLE_RATE / 400 * 2;
