@@ -2295,7 +2295,7 @@ void app_main(void) {
 
     for (int i = 0; i < 1024; i++) {
         // Generate a sine wave scaled to the full 32-bit signed integer range.
-        float sample_f = 0.5f * 0x03FFFFFF * sinf(440.0f * 2 * M_PI * i / I2S_SAMPLE_RATE);
+        float sample_f = 0.5f * 0x0FFFFFFF * sinf(440.0f * 2 * M_PI * i / I2S_SAMPLE_RATE);
         int32_t sample = (int32_t)sample_f;
         continuous_audio_file[2 * i] = sample;
         continuous_audio_file[2 * i + 1] = sample;
