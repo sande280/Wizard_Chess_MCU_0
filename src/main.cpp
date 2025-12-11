@@ -1802,6 +1802,11 @@ void piecePickupDetectionTask(void *pvParameter) {
                        selectedRow, currentTurn, playerColor, pieceHeld ? 1 : 0);
             }
 
+            // Track pending capture (when opponent piece lifted before user places their piece)
+            static int pendingCaptureRow = -1;
+            static int pendingCaptureCol = -1;
+            static ChessPiece* pendingCapturePiece = nullptr;
+
             // Check main board area (physical rows 2-9 = chess cols 7-0)
             // Coordinate mapping (matching LEDs): physRow = 9 - chessCol, physCol = chessRow
             for (int physRow = 2; physRow < 10; physRow++) {
@@ -1844,6 +1849,33 @@ void piecePickupDetectionTask(void *pvParameter) {
                     }
                 }
 
+                // Detect opponent piece lifted while our piece is selected (capture in progress)
+                if (lifted && selectedRow >= 0 && pendingCapturePiece == nullptr) {
+                    for (int physCol = 0; physCol < 8; physCol++) {
+                        if (lifted & (1 << physCol)) {
+                            int liftedRow = physCol;
+                            int liftedCol = chessCol;
+
+                            // Check if this is a valid capture destination
+                            auto possibleMoves = boardPtr->getPossibleMoves(selectedRow, selectedCol);
+                            for (const auto& move : possibleMoves) {
+                                if (move.first == liftedRow && move.second == liftedCol) {
+                                    // This is the opponent's piece being captured
+                                    ChessPiece* piece = boardPtr->getPiece(liftedRow, liftedCol);
+                                    if (piece && piece->getColor() != currentTurn) {
+                                        pendingCaptureRow = liftedRow;
+                                        pendingCaptureCol = liftedCol;
+                                        pendingCapturePiece = piece;
+                                        printf("Capture in progress: opponent piece at (%d,%d) lifted\n",
+                                               liftedRow, liftedCol);
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Detect piece placed: was absent (0), now present (1)
                 uint8_t placed = ~prev & curr;
 
@@ -1861,6 +1893,11 @@ void piecePickupDetectionTask(void *pvParameter) {
                                 printf("Piece returned to original square - move cancelled\n");
                                 pieceHeld = false;
                                 selectedRow = selectedCol = -1;
+
+                                // Clear pending capture state
+                                pendingCaptureRow = -1;
+                                pendingCaptureCol = -1;
+                                pendingCapturePiece = nullptr;
 
                                 // Restore ambient LEDs
                                 if (led != nullptr) {
@@ -1898,8 +1935,19 @@ void piecePickupDetectionTask(void *pvParameter) {
                                 continue;  // Don't clear selection, let player try again
                             }
 
-                            // Check if this is a capture move - enemy piece at destination
-                            ChessPiece* targetPiece = boardPtr->getPiece(destRow, destCol);
+                            // Check if this is a capture move
+                            ChessPiece* targetPiece = nullptr;
+                            if (pendingCapturePiece != nullptr &&
+                                destRow == pendingCaptureRow && destCol == pendingCaptureCol) {
+                                // Use the pending capture piece (was lifted before placement)
+                                targetPiece = pendingCapturePiece;
+                                printf("Completing capture: piece was pre-lifted from (%d,%d)\n",
+                                       pendingCaptureRow, pendingCaptureCol);
+                            } else {
+                                // Normal case: check if piece still on board
+                                targetPiece = boardPtr->getPiece(destRow, destCol);
+                            }
+
                             if (targetPiece != nullptr) {
                                 // This is a capture - in physical mode, player handles it manually
                                 // Just increment the capture counter (getNextCaptureSlot does this)
@@ -1940,6 +1988,11 @@ void piecePickupDetectionTask(void *pvParameter) {
                                 }
 
                                 selectedRow = selectedCol = -1;
+
+                                // Clear pending capture state
+                                pendingCaptureRow = -1;
+                                pendingCaptureCol = -1;
+                                pendingCapturePiece = nullptr;
                             } else {
                                 printf("Physical move failed unexpectedly\n");
                                 // Keep selection so player can try again
