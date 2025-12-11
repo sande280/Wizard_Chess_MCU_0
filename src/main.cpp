@@ -1742,7 +1742,7 @@ void moveDispatchTask(void *pvParameters) {
             // ESP_LOGI("MOVE", "Idle: position reached");
             vTaskDelay(pdMS_TO_TICKS(100));
             gpio_set_level(HFS_PIN, 1);
-            printf("%lld\n", (esp_timer_get_time() / 1000) - input_time);
+            //printf("%lld\n", (esp_timer_get_time() / 1000) - input_time);
 
             if (gantry.zero_set && (((esp_timer_get_time() / 1000) - input_time) > MOTOR_SLEEP_TIMEOUT_MS) && !gantry.home_active) {
                 rest_motors();
@@ -1794,6 +1794,12 @@ void piecePickupDetectionTask(void *pvParameter) {
                     printf("Board setup complete! All 32 pieces detected. Game can begin.\n");
                     // Show GREEN to indicate ready
                     led->showBoardReady();
+
+                    // If playing as black in physical mode, trigger AI's first move
+                    if (currentMode == MODE_PHYSICAL && playerColor == Black) {
+                        printf("Physical mode (Black): Triggering AI's first move...\n");
+                        aiMoveRequested = true;
+                    }
                 }
             }
             // When boardSetupComplete but not firstMoveMade, keep GREEN displayed
@@ -2311,6 +2317,13 @@ void aiResponseTask(void *pvParameter) {
             setupMoveTracking(boardPtr);
             // rest_motors();
 
+            // Mark first move as made (important for AI's first move when playing as black)
+            if (!firstMoveMade) {
+                firstMoveMade = true;
+                showReedStateMode = false;  // Disable setup LED mode
+                printf("AI made first move - transitioning to WHITE ambient\n");
+            }
+
             // Send updated board state to UI after AI move
             {
                 uint8_t aiTxBuffer[33];
@@ -2327,7 +2340,7 @@ void aiResponseTask(void *pvParameter) {
             }
 
             // Update ambient lighting after AI move
-            if (led != nullptr && firstMoveMade) {
+            if (led != nullptr) {
                 led->showAmbientWhite(*boardPtr);
             }
 
@@ -2355,7 +2368,12 @@ void aiResponseTask(void *pvParameter) {
                         serializeBoardStateStalemate(*boardPtr, gameOverBuffer);
                     }
                 }
-                i2c_slave_write_buffer(I2C_SLAVE_PORT, gameOverBuffer, 33, pdMS_TO_TICKS(100));
+                // Reset FIFO and send game over state
+                vTaskDelay(pdMS_TO_TICKS(100));
+                i2c_reset_tx_fifo(I2C_SLAVE_PORT);
+                vTaskDelay(pdMS_TO_TICKS(50));
+                i2c_slave_write_buffer(I2C_SLAVE_PORT, gameOverBuffer, 33, pdMS_TO_TICKS(1000));
+                printf("Sent game over state (0x%02X preamble)\n", gameOverBuffer[0]);
             }
 
             // Flip turn back to human
@@ -2540,45 +2558,37 @@ void app_main(void) {
                     }
                     printf("UI mode: Showing ambient white lighting.\n");
                 } else {
-                    // Physical mode: Enable real-time reed LED display
+                    // Physical mode: Enable real-time reed LED display for board setup
+                    // Both white and black players need board setup first
+                    showReedStateMode = true;
+                    firstMoveMade = false;
+                    boardSetupComplete = false;  // Reset - wait for all pieces to be placed
+                    pieceHeld = false;
                     if (playerColor == White) {
-                        showReedStateMode = true;
-                        firstMoveMade = false;
-                        boardSetupComplete = false;  // Reset - wait for all pieces to be placed
-                        pieceHeld = false;
                         printf("Board ready - place all pieces. LEDs will show RED/GREEN for setup.\n");
                     } else {
-                        showReedStateMode = false;
-                        firstMoveMade = false;
-                        boardSetupComplete = false;  // Reset - wait for all pieces to be placed
-                        pieceHeld = false;
-                        printf("Board ready - place all pieces. AI will make first move after setup.\n");
+                        printf("Board ready - place all pieces. LEDs will show RED/GREEN for setup. AI will move after setup.\n");
                     }
                 }
 
-                // When player is black, AI (white) makes the first move
-                if (playerColor == Black) {
-                    if (currentMode == MODE_UI) {
-                        // UI mode: AI makes first move immediately
-                        printf("AI (White) making first move...\n");
-                        ChessAI ai;
-                        board.setTurn(White);
-                        AIMove aiMove = ai.findBestMove(board, White, 3);
-                        if (aiMove.fromRow >= 0) {
-                            board.movePiece(aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
-                            printf("AI opening move: (%d,%d) -> (%d,%d)\n",
-                                   aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
-                            currentTurn = Black;  // Now it's human's (black's) turn
+                // When player is black in UI mode, AI makes first move immediately
+                // In physical mode, wait for board setup first (handled in aiResponseTask)
+                if (playerColor == Black && currentMode == MODE_UI) {
+                    // UI mode: AI makes first move immediately
+                    printf("AI (White) making first move...\n");
+                    ChessAI ai;
+                    board.setTurn(White);
+                    AIMove aiMove = ai.findBestMove(board, White, 3);
+                    if (aiMove.fromRow >= 0) {
+                        board.movePiece(aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
+                        printf("AI opening move: (%d,%d) -> (%d,%d)\n",
+                               aiMove.fromRow, aiMove.fromCol, aiMove.toRow, aiMove.toCol);
+                        currentTurn = Black;  // Now it's human's (black's) turn
 
-                            // Show WHITE ambient under all pieces after AI's first move
-                            if (led != nullptr) {
-                                led->showAmbientWhite(board);
-                            }
+                        // Show WHITE ambient under all pieces after AI's first move
+                        if (led != nullptr) {
+                            led->showAmbientWhite(board);
                         }
-                    } else {
-                        // Physical mode: Signal AI task to make first move
-                        printf("Physical mode: Signaling AI to make first move\n");
-                        aiMoveRequested = true;
                     }
 
                     // Send flipped board state (black's perspective)
