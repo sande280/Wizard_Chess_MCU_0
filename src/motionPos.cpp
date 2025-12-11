@@ -457,6 +457,8 @@ void fuck(){
     mc.y = board_pos[5][4][1];
     move_queue_push(&mc);
 
+    gpio_set_level(MAGNET_PIN, 0);
+
 }
 
 //--------------------------------------------
