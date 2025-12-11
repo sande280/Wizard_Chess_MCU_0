@@ -295,9 +295,14 @@ int correct_movement(int fix_x, int fix_y){
 }
 
 int home_gantry() {
+
     gantry.home_active = true;
     const float homing_speed = 20.0f; // mm/s
     const float backoff_dist = 20.0f; // mm
+
+    while(!gantry.position_reached) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
 
     // Temporarily disable interrupts on limit switches to check their state
     gpio_intr_disable(LIMIT_Y_PIN);
