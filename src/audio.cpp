@@ -119,6 +119,12 @@ void audio::playback_task(void* pvParameters)
 
 void audio::start_continuous_playback(int32_t* audio_buffer, uint32_t buffer_size)
 {
+    // Check if handles are valid
+    if (tx_handle == NULL || rx_handle == NULL) {
+        ESP_LOGE(TAG, "I2S handles not initialized!");
+        return;
+    }
+
     ESP_ERROR_CHECK(i2s_channel_enable(tx_handle));
     ESP_ERROR_CHECK(i2s_channel_enable(rx_handle));
 
@@ -132,6 +138,7 @@ void audio::start_continuous_playback(int32_t* audio_buffer, uint32_t buffer_siz
 
     m_continuous_audio_buffer = audio_buffer;
     m_continuous_buffer_size = buffer_size;
+    m_stop_flag = false;  // Reset stop flag before starting task
 
     xTaskCreate(
         playback_task,
@@ -185,17 +192,49 @@ void audio::play_oneshot(int32_t* audio_buffer, uint32_t buffer_size)
 
 void audio::play_tone(uint32_t frequency, uint32_t duration_ms, float volume)
 {
-    int32_t continuous_audio_file[I2S_SAMPLE_RATE * duration_ms * 2 / 1000] = {0};
-    uint32_t continuous_buffer_size = I2S_SAMPLE_RATE * duration_ms * 2 / 1000;
+    // Enable I2S channels for direct playback
+    ESP_ERROR_CHECK(i2s_channel_enable(tx_handle));
 
-    for (int i = 0; i < I2S_SAMPLE_RATE * duration_ms / 1000; i++) {
-        // Generate a sine wave scaled to the full 32-bit signed integer range.
-        float sample_f = volume * 0x7FFFFFFF * sinf(frequency * 2 * M_PI * i / I2S_SAMPLE_RATE);
-        int32_t sample = (int32_t)sample_f;
-        continuous_audio_file[2 * i] = sample;
-        continuous_audio_file[2 * i + 1] = sample;
+    // Calculate total samples needed
+    uint32_t total_samples = (I2S_SAMPLE_RATE * duration_ms) / 1000;
+
+    // Chunk size for generation buffer (small enough for stack)
+    // 128 samples * 2 channels * 4 bytes = 1024 bytes
+    const size_t CHUNK_SIZE = 128;
+    int32_t tone_buffer[CHUNK_SIZE * 2]; // Stereo buffer
+
+    // Phase accumulator
+    float phase = 0.0f;
+    float phase_increment = (2.0f * M_PI * frequency) / I2S_SAMPLE_RATE;
+
+    // Max amplitude for 32-bit signed int
+    int32_t amplitude = (int32_t)(2147483647.0f * volume);
+
+    size_t generated = 0;
+    while (generated < total_samples) {
+        size_t chunk_len = 0;
+
+        // Fill chunk buffer
+        for (size_t i = 0; i < CHUNK_SIZE && generated < total_samples; i++, generated++) {
+            // Generate sine wave sample
+            int32_t sample = (int32_t)(sinf(phase) * amplitude);
+
+            // Stereo output (duplicate mono to both channels)
+            tone_buffer[i * 2] = sample;     // Left
+            tone_buffer[i * 2 + 1] = sample; // Right
+
+            phase += phase_increment;
+            // Keep phase within 0-2PI to avoid precision loss
+            if (phase > 2.0f * M_PI) phase -= 2.0f * M_PI;
+
+            chunk_len++;
+        }
+
+        // Blocking write to I2S
+        size_t bytes_written;
+        i2s_channel_write(tx_handle, tone_buffer, chunk_len * 2 * sizeof(int32_t), &bytes_written, portMAX_DELAY);
     }
 
-    speaker->play_oneshot(continuous_audio_file, continuous_buffer_size);
-
+    // Disable I2S channel after playback
+    ESP_ERROR_CHECK(i2s_channel_disable(tx_handle));
 }

@@ -2387,30 +2387,8 @@ void app_main(void) {
     switches->init();
     switches->start_scan_task();
 
-    // speaker = new audio();
-    // speaker->init();
-    // // speaker->play_tone(440, 2000, 0.25f);
-
-    // static int32_t continuous_audio_file[I2S_SAMPLE_RATE / 400 * 2] = {0};
-    // const uint32_t continuous_buffer_size = I2S_SAMPLE_RATE / 400 * 2;
-
-    // for (int i = 0; i < I2S_SAMPLE_RATE / 400; i++) {
-    //     // Generate a sine wave scaled to the full 32-bit signed integer range.
-    //     float sample_f = 0.5f * 0x0FFFFFFF * sinf(400.0f * 2 * M_PI * i / I2S_SAMPLE_RATE);
-    //     int32_t sample = (int32_t)sample_f;
-    //     continuous_audio_file[2 * i] = sample;
-    //     continuous_audio_file[2 * i + 1] = sample;
-    // }
-
-    // speaker->start_continuous_playback(continuous_audio_file, continuous_buffer_size);
-
-    // static int32_t chicken[2] = {0};
-    // const uint32_t duck = 2;
-
-    // vTaskDelay(pdMS_TO_TICKS(2000));
-
-
-    // speaker->stop_continuous_playback();
+    speaker = new audio();
+    speaker->init();
 
     gpio_output_init(STEP1_PIN);
     gpio_output_init(STEP2_PIN);
@@ -2456,6 +2434,8 @@ void app_main(void) {
     if (homeOK != -1) {
         xTaskCreate(moveDispatchTask, "MoveDispatch", 8192, NULL, 10, NULL);
     }
+
+    speaker->play_tone(440, 2000, 0.5f);
     
     // ------------movement tests---------------
     // plan_move(0, 0, 2, 0, true);
