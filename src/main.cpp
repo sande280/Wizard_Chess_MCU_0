@@ -2290,12 +2290,12 @@ void app_main(void) {
     speaker = new audio();
     speaker->init();
 
-    static int32_t continuous_audio_file[1024*2] = {0};
-    const uint32_t continuous_buffer_size = 1024 * 2;
+    static int32_t continuous_audio_file[I2S_SAMPLE_RATE / 400 * 2] = {0};
+    const uint32_t continuous_buffer_size = I2S_SAMPLE_RATE / 400 * 2;
 
-    for (int i = 0; i < 1024; i++) {
+    for (int i = 0; i < I2S_SAMPLE_RATE / 400; i++) {
         // Generate a sine wave scaled to the full 32-bit signed integer range.
-        float sample_f = 0.5f * 0x0FFFFFFF * sinf(440.0f * 2 * M_PI * i / I2S_SAMPLE_RATE);
+        float sample_f = 0.5f * 0x0FFFFFFF * sinf(400.0f * 2 * M_PI * i / I2S_SAMPLE_RATE);
         int32_t sample = (int32_t)sample_f;
         continuous_audio_file[2 * i] = sample;
         continuous_audio_file[2 * i + 1] = sample;
