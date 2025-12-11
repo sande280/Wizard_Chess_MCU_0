@@ -56,14 +56,7 @@ void audio::init_i2s()
     ESP_ERROR_CHECK(i2s_channel_enable(tx_handle));
     ESP_ERROR_CHECK(i2s_channel_enable(rx_handle));
 
-    xTaskCreate(
-        playback_task,
-        "AudioPlaybackTask",
-        4096,
-        this, // Pass the current object instance to the task
-        5,
-        &m_playback_task_handle
-    );
+    
 }
 
 void audio::init()
@@ -136,6 +129,15 @@ void audio::start_continuous_playback(int32_t* audio_buffer, uint32_t buffer_siz
 
     m_continuous_audio_buffer = audio_buffer;
     m_continuous_buffer_size = buffer_size;
+
+    xTaskCreate(
+        playback_task,
+        "AudioPlaybackTask",
+        4096,
+        this, // Pass the current object instance to the task
+        5,
+        &m_playback_task_handle
+    );
 }
 
 void audio::stop_continuous_playback()

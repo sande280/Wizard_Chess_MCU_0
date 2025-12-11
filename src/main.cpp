@@ -2378,7 +2378,12 @@ void app_main(void) {
 
     speaker->start_continuous_playback(continuous_audio_file, continuous_buffer_size);
 
+    static int32_t chicken[2] = {0};
+    const uint32_t duck = 2;
+
     vTaskDelay(pdMS_TO_TICKS(2000));
+
+    speaker->start_continuous_playback(chicken, duck);
 
     speaker->stop_continuous_playback();
 
