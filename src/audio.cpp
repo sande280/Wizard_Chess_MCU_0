@@ -99,7 +99,7 @@ void audio::playback_task(void* pvParameters)
     int32_t silence[silence_len * 2] = {0};
 
     // Conversion buffer for 16-bit to 32-bit expansion
-    const size_t CHUNK_SIZE = 256; 
+    const size_t CHUNK_SIZE = 2048; 
     int32_t convert_buffer[CHUNK_SIZE * 2]; 
 
     while(1)
